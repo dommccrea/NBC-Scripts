@@ -1,0 +1,92 @@
+WITH
+filtered_wlk1 AS (
+  SELECT *
+  FROM WLK1
+  WHERE FILIA LIKE 'GD%'
+),
+base_data AS (
+  SELECT
+    RIGHT(w.ARTNR, 6) AS Display_ID,
+    dc.WERKS AS DC,
+    dc.MMSTA AS DC_Status,
+    dc.MMSTD AS DCStatusValidFrom,
+    store.WERKS AS Store,
+    store.MMSTA AS Store_Status,
+    store.MMSTD AS StoreStatusValidFrom,
+    mard.LABST AS MARD_DC_Stock,
+    Nmard.LABST AS NSDM_V_MARD_DC_Stock,
+    CASE
+      WHEN (po.LOEKZ <> 'L' AND (po.ELIKZ = '' or po.BWART is null)) THEN 'X'
+      ELSE ''
+    END AS OpenPos,
+    MAKT.MAKTX AS Product_Description,
+    po.EBELN AS LatestPO,
+    po.EINDT AS PODeliveryDate,
+    T024.EKNAM AS BuyingDirector
+  FROM filtered_wlk1 AS w
+  LEFT JOIN WRF3 AS r
+    ON r.LOCLB = w.FILIA
+  LEFT JOIN MARC AS dc
+    ON dc.MATNR = w.ARTNR AND dc.WERKS = w.FILIA AND dc.MMSTA = '20'
+  LEFT JOIN MARC AS store
+    ON store.MATNR = w.ARTNR AND store.WERKS = r.LOCNR AND store.MMSTA = '10'
+  LEFT JOIN MARD AS mard
+    ON mard.MATNR = w.ARTNR AND mard.WERKS = w.FILIA AND mard.LGORT = '0001'
+  LEFT JOIN NSDM_V_MARD AS Nmard
+    ON Nmard.MATNR = w.ARTNR AND Nmard.WERKS = w.FILIA AND Nmard.LGORT = '0001'
+  LEFT JOIN MARA
+    ON MARA.MATNR = w.ARTNR AND MARA.MTART = 'Z100' AND MARA.ATTYP = '12'
+  LEFT JOIN MAKT
+    ON MAKT.MATNR = w.ARTNR AND MAKT.SPRAS = 'E'
+  INNER JOIN MVKE
+    ON MVKE.MATNR = MARA.MATNR
+    AND MVKE.VKORG = '5998'
+    AND MVKE.VTWEG = '10'
+    AND SUBSTRING(MVKE.PRODH, 5, 1) IN ('1', '3')
+  LEFT JOIN T024
+    ON T024.EKGRP = MVKE.ZZPRGRP
+  LEFT JOIN ZP2P_PO_DATA AS po
+    ON po.MATNR = w.ARTNR AND po.WERKS = dc.WERKS AND po.EKORG = '5998'
+  WHERE
+    store.MMSTA = '10'
+    AND dc.MMSTA = '20'
+    AND dc.MMSTD < ADD_DAYS(CURRENT_DATE, -7)
+    AND mard.LABST = 0
+    AND NOT EXISTS (
+      SELECT 1
+      FROM ZP2P_PO_DATA po_check
+      WHERE po_check.MATNR = w.ARTNR
+        AND po_check.WERKS = dc.WERKS
+        AND po_check.LOEKZ <> 'L'
+        AND (po_check.ELIKZ = '' or po_check.BWART is null)
+        AND po_check.EINDT > ADD_DAYS(CURRENT_DATE, -30)
+    )
+),
+numbered AS (
+  SELECT
+    bd.*,
+    ROW_NUMBER() OVER (
+      PARTITION BY Display_ID, DC
+      ORDER BY bd.PODeliveryDate DESC
+    ) AS rn
+  FROM base_data bd
+)
+SELECT
+  
+  BuyingDirector,
+    Display_ID,
+  Product_Description,
+  DC,
+  DC_Status,
+  DCStatusValidFrom,
+  Store,
+  Store_Status,
+  StoreStatusValidFrom,
+  MARD_DC_Stock,
+  NSDM_V_MARD_DC_Stock,
+  OpenPos,
+  LatestPO,
+  PODeliveryDate
+FROM numbered
+WHERE rn = 1
+order by BuyingDirector, Display_ID
