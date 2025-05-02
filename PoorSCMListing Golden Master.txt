@@ -27,7 +27,7 @@ base_data AS (
   LEFT JOIN WRF3 AS r
     ON r.LOCLB = w.FILIA
   LEFT JOIN MARC AS dc
-    ON dc.MATNR = w.ARTNR AND dc.WERKS = w.FILIA AND dc.MMSTA = '20'
+    ON dc.MATNR = w.ARTNR AND dc.WERKS = w.FILIA AND dc.MMSTA = ('20','21','30')
   LEFT JOIN MARC AS store
     ON store.MATNR = w.ARTNR AND store.WERKS = r.LOCNR AND store.MMSTA = '10'
   LEFT JOIN MARD AS mard
