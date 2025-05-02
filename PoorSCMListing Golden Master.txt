@@ -64,7 +64,7 @@ WITH
       store.MMSTA              AS Store_Status,
       store.MMSTD              AS StoreStatusValidFrom,
       mard.LABST               AS MARD_DC_Stock,
-      Nmard.LABST              AS NSDM_V_MARD_DC_Stock,
+      CAST( Nmard.LABST AS INTEGER )               AS DC_Stock,
       CASE 
         WHEN (po.LOEKZ <> 'L' 
               AND (po.ELIKZ = '' OR po.BWART IS NULL)) 
@@ -124,7 +124,8 @@ WITH
       store.MMSTA   = '10'
       AND dc.MMSTA IN ('20','21','30')
       AND dc.MMSTD  < ADD_DAYS(CURRENT_DATE,-7)
-      AND mard.LABST = 0
+      AND Nmard.LABST < 10
+--     AND mard.LABST = 0
       AND NOT EXISTS (
       SELECT 1
       FROM ZP2P_PO_DATA po_check
@@ -150,23 +151,21 @@ SELECT
   BuyingDirector,
   Display_ID,
   Product_Description,
+CASE
+    WHEN AnyStoreValidListingFlag = 1 THEN 'Y'
+    ELSE 'N'
+  END AS StoreListed,
   DC,
   DC_Status,
   DCStatusValidFrom,
   Store,
   Store_Status,
   StoreStatusValidFrom,
-  MARD_DC_Stock,
-  NSDM_V_MARD_DC_Stock,
+--  MARD_DC_Stock,
+  DC_Stock,
   OpenPos,
   LatestPO,
-  PODeliveryDate,
-
-
-  CASE
-    WHEN AnyStoreValidListingFlag = 1 THEN 'Y'
-    ELSE 'N'
-  END AS AnyStoreListingValid
+  PODeliveryDate  
 
 FROM numbered
 WHERE rn = 1
