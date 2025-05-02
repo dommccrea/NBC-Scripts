@@ -49,7 +49,7 @@ base_data AS (
     ON po.MATNR = w.ARTNR AND po.WERKS = dc.WERKS AND po.EKORG = '5998'
   WHERE
     store.MMSTA = '10'
-    AND dc.MMSTA = '20'
+    AND dc.MMSTA in ('20', '21', '30')
     AND dc.MMSTD < ADD_DAYS(CURRENT_DATE, -7)
     AND mard.LABST = 0
     AND NOT EXISTS (
