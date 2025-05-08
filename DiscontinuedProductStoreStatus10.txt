@@ -36,7 +36,8 @@ WITH
       R.LOCLB    AS DC,
       R.LOCNR    AS StoreCode
     FROM WRF3 R
-    WHERE R.LOCLB LIKE 'GD%'
+    WHERE R.LOCLB LIKE 'GD%' and R.DATAB   <= CURRENT_DATE
+      AND R.DATBI  >= CURRENT_DATE and (r.matkl is null or r.matkl = '')
       
   ),
 
