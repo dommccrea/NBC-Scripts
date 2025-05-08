@@ -92,7 +92,7 @@ WITH
       LEFT JOIN MARC       store 
                              ON store.MATNR = w.ARTNR 
                             AND store.WERKS = r.LOCNR 
-                            AND store.MMSTA = '10'
+                            AND store.MMSTA <> '30'
       LEFT JOIN MARD       mard 
                              ON mard.MATNR = w.ARTNR 
                             AND mard.WERKS = w.FILIA 
