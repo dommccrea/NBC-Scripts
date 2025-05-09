@@ -212,8 +212,8 @@ SELECT
   Product_Description,
   -- turn numeric flags into Y/N
   CASE WHEN AnyStoreValidListing    = 1 THEN 'Y' ELSE 'N' END AS StoreListed,
-  CASE WHEN AnyValidSubstitution   = 1 THEN 'Y' ELSE 'N' END AS HasSubstitution,
-  CASE WHEN ListingAndSubstitution = 1 THEN 'Y' ELSE 'N' END AS BothFlags,
+  CASE WHEN AnyValidSubstitution   = 1 THEN 'Y' ELSE 'N' END AS PendingSubstitution,
+  Case when AnyStoreValidListing    = 1 and AnyValidSubstitution = 0 then 'Y' ELSE 'N' END as ListedWithoutPendingSubstitution,
   DC,
   DC_Status,
   DCStatusValidFrom,
