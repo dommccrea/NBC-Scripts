@@ -1,3 +1,5 @@
+---combined report, important to check if this matches both reports correctly when run separately!--
+
 WITH
   ----------------------------------------------------------------
   -- 0) (Optional) your original filter on WLK1 for DC-level rows
@@ -15,7 +17,7 @@ WITH
       FILIA      AS GroupID
     FROM WLK1
     WHERE DATAB   <= CURRENT_DATE
-      AND DATBI  >= CURRENT_DATE
+      AND DATBI   >= CURRENT_DATE
   ),
 
   ----------------------------------------------------------------
@@ -26,7 +28,7 @@ WITH
       Z.LOCNR    AS StoreCode
     FROM WRSZ Z
     WHERE Z.DATAB   <= CURRENT_DATE
-      AND Z.DATBI  >= CURRENT_DATE
+      AND Z.DATBI   >= CURRENT_DATE
   ),
 
   ----------------------------------------------------------------
@@ -36,26 +38,25 @@ WITH
       R.LOCLB    AS DC,
       R.LOCNR    AS StoreCode
     FROM WRF3 R
-    WHERE R.LOCLB LIKE 'GD%' and R.DATAB   <= CURRENT_DATE
-      AND R.DATBI  >= CURRENT_DATE and (r.matkl is null or r.matkl = '')
-      
+    WHERE R.LOCLB LIKE 'GD%'
+      AND R.DATAB   <= CURRENT_DATE
+      AND R.DATBI   >= CURRENT_DATE
+      AND (R.MATKL IS NULL OR R.MATKL = '')
   ),
 
   ----------------------------------------------------------------
-  -- 4) stitch 1→2→3 to get every (ARTNR,DC) that has *any* store listing
+  -- 4) every (ARTNR,DC) with any store listing
   listing_per_dc AS (
     SELECT DISTINCT
       VL.ARTNR,
       DS.DC
     FROM valid_listings VL
-    JOIN store_group SG
-      ON SG.GroupID   = VL.GroupID
-    JOIN dc_supply DS
-      ON DS.StoreCode = SG.StoreCode
+    JOIN store_group   SG ON SG.GroupID   = VL.GroupID
+    JOIN dc_supply     DS ON DS.StoreCode = SG.StoreCode
   ),
 
   ----------------------------------------------------------------
-  -- 4b) grab each active substitution *group*
+  -- 5) grab each active substitution‐group
   valid_substitutions AS (
     SELECT DISTINCT
       F.ORIGINAL_ART_NR AS ARTNR,
@@ -66,7 +67,7 @@ WITH
   ),
 
   ----------------------------------------------------------------
-  -- 4c) expand each substitution‐group into its member stores
+  -- 6) expand group→store
   substitution_stores AS (
     SELECT
       VS.ARTNR,
@@ -79,7 +80,7 @@ WITH
   ),
 
   ----------------------------------------------------------------
-  -- 4d) roll those stores up to (ARTNR,DC)
+  -- 7) roll up to (ARTNR,DC)
   substitution_per_dc AS (
     SELECT DISTINCT
       SS.ARTNR,
@@ -89,7 +90,8 @@ WITH
       ON DS.StoreCode = SS.StoreCode
   ),
 
-  -- 5) your main payload, now with a 1/0 flag from listing_per_dc
+  ----------------------------------------------------------------
+  -- 8) build the payload with flags
   base_data AS (
     SELECT
       RIGHT(w.ARTNR,6)         AS Display_ID,
@@ -99,8 +101,7 @@ WITH
       store.WERKS              AS Store,
       store.MMSTA              AS Store_Status,
       store.MMSTD              AS StoreStatusValidFrom,
-      mard.LABST               AS MARD_DC_Stock,
-      CAST( Nmard.LABST AS INTEGER )               AS DC_Stock,
+      CAST(Nmard.LABST AS INTEGER) AS DC_Stock,
       CASE 
         WHEN (po.LOEKZ <> 'L' 
               AND (po.ELIKZ = '' OR po.BWART IS NULL)) 
@@ -112,90 +113,89 @@ WITH
       po.EINDT                 AS PODeliveryDate,
       T024.EKNAM               AS BuyingDirector,
 
-      -- ←←← This is the new bit ←←←
+      -- any store listing?
+      CASE WHEN lpd.ARTNR IS NOT NULL THEN 1 ELSE 0 END  
+        AS AnyStoreValidListingFlag,
+
+      -- any valid substitution?
+      CASE WHEN spd.ARTNR IS NOT NULL THEN 1 ELSE 0 END  
+        AS AnyValidSubstitutionFlag,
+
+      -- all stores status=30?
       CASE 
-        WHEN lpd.ARTNR IS NOT NULL THEN 1
-        ELSE 0
-      END                      AS AnyStoreValidListing,
-
-      -- flag: any valid substitution?
-      CASE WHEN spd.ARTNR IS NOT NULL THEN 1 ELSE 0 END
-        AS AnyValidSubstitution,
-
-      -- both flags together
-      CASE
-        WHEN lpd.ARTNR IS NOT NULL
-         AND spd.ARTNR IS NOT NULL
+        WHEN SUM(CASE WHEN store.MMSTA <> '30' THEN 1 ELSE 0 END) 
+           OVER (PARTITION BY w.ARTNR, dc.WERKS) = 0
         THEN 1 ELSE 0
-      END AS ListingAndSubstitution
+      END                                                AS AllStoresStatus30Flag
 
     FROM filtered_wlk1 w
 
-      LEFT JOIN WRF3       r   ON r.LOCLB = w.FILIA 
-                              and  R.LOCLB LIKE 'GD%' 
-                              and R.DATAB   <= CURRENT_DATE
-                              AND R.DATBI  >= CURRENT_DATE 
-                              and (r.matkl is null or r.matkl = '')
+      LEFT JOIN WRF3   r   ON r.LOCLB = w.FILIA
+                           AND r.DATAB <= CURRENT_DATE
+                           AND r.DATBI >= CURRENT_DATE
+                           AND (r.MATKL IS NULL OR r.MATKL = '')
 
-      LEFT JOIN MARC       dc  ON dc.MATNR = w.ARTNR 
-                             AND dc.WERKS = w.FILIA 
-                             AND dc.MMSTA IN ('20','21','30')
-      LEFT JOIN MARC       store 
-                             ON store.MATNR = w.ARTNR 
-                            AND store.WERKS = r.LOCNR 
-                            AND store.MMSTA <> '30'
-      LEFT JOIN MARD       mard 
-                             ON mard.MATNR = w.ARTNR 
-                            AND mard.WERKS = w.FILIA 
-                            AND mard.LGORT = '0001'
-      LEFT JOIN NSDM_V_MARD Nmard 
-                             ON Nmard.MATNR = w.ARTNR 
-                            AND Nmard.WERKS = w.FILIA 
-                            AND Nmard.LGORT = '0001'
-      LEFT JOIN MARA       ON MARA.MATNR = w.ARTNR 
-                           AND MARA.MTART = 'Z100' 
-                           AND MARA.ATTYP = '12'
-      LEFT JOIN MAKT       ON MAKT.MATNR = w.ARTNR 
-                           AND MAKT.SPRAS = 'E'
-      INNER JOIN MVKE       ON MVKE.MATNR = MARA.MATNR
-                           AND MVKE.VKORG = '5998'
-                           AND MVKE.VTWEG = '10'
-                           AND SUBSTRING(MVKE.PRODH,5,1) IN ('1','3')
-      LEFT JOIN T024        ON T024.EKGRP = MVKE.ZZPRGRP
-      LEFT JOIN ZP2P_PO_DATA po 
-                           ON po.MATNR = w.ARTNR 
-                          AND po.WERKS = dc.WERKS 
-                          AND po.EKORG = '5998'
+      LEFT JOIN MARC   dc  ON dc.MATNR = w.ARTNR
+                           AND dc.WERKS = w.FILIA
+                           AND dc.MMSTA IN ('20','21','30')
 
-      -- ←←← join the flag CTE ←←←
-      LEFT JOIN listing_per_dc lpd 
-        ON lpd.ARTNR = w.ARTNR 
+      LEFT JOIN MARC   store 
+        ON store.MATNR = w.ARTNR
+       AND store.WERKS  = r.LOCNR
+       AND store.MMSTA <> '30'
+
+      LEFT JOIN MARD   mard   ON mard.MATNR = w.ARTNR
+                              AND mard.WERKS = w.FILIA
+                              AND mard.LGORT = '0001'
+
+      LEFT JOIN NSDM_V_MARD Nmard
+                           ON Nmard.MATNR = w.ARTNR
+                          AND Nmard.WERKS = w.FILIA
+                          AND Nmard.LGORT = '0001'
+
+      LEFT JOIN MARA   ON MARA.MATNR = w.ARTNR
+                      AND MARA.MTART = 'Z100'
+                      AND MARA.ATTYP = '12'
+
+      LEFT JOIN MAKT   ON MAKT.MATNR = w.ARTNR
+                      AND MAKT.SPRAS = 'E'
+
+      INNER JOIN MVKE  ON MVKE.MATNR = MARA.MATNR
+                      AND MVKE.VKORG = '5998'
+                      AND MVKE.VTWEG = '10'
+                      AND SUBSTRING(MVKE.PRODH,5,1) IN ('1','3')
+
+      LEFT JOIN T024   ON T024.EKGRP = MVKE.ZZPRGRP
+
+      LEFT JOIN ZP2P_PO_DATA po
+        ON po.MATNR = w.ARTNR
+       AND po.WERKS = dc.WERKS
+       AND po.EKORG = '5998'
+
+      LEFT JOIN listing_per_dc lpd
+        ON lpd.ARTNR = w.ARTNR
        AND lpd.DC    = dc.WERKS
 
-      -- bring in the substitution flag
       LEFT JOIN substitution_per_dc spd
         ON spd.ARTNR = w.ARTNR
        AND spd.DC    = dc.WERKS
 
-
     WHERE
-      store.MMSTA <> '30'
-      AND dc.MMSTA IN ('20','21','30')
-      AND dc.MMSTD  < ADD_DAYS(CURRENT_DATE,-7)
+      dc.MMSTD  < ADD_DAYS(CURRENT_DATE, -7)
       AND Nmard.LABST < 10
--- consider adjusting to less than 500
---     AND mard.LABST = 0
       AND NOT EXISTS (
-      SELECT 1
-      FROM ZP2P_PO_DATA po_check
-      WHERE po_check.MATNR = w.ARTNR
-        AND po_check.WERKS = dc.WERKS
-        AND po_check.LOEKZ <> 'L'
-        AND (po_check.ELIKZ = '' or po_check.BWART is null)
-        AND po_check.EINDT > ADD_DAYS(CURRENT_DATE, -30)
-    )
-),
+        SELECT 1
+          FROM ZP2P_PO_DATA po_check
+         WHERE po_check.MATNR = w.ARTNR
+           AND po_check.WERKS = dc.WERKS
+           AND po_check.LOEKZ <> 'L'
+           AND (po_check.ELIKZ = '' OR po_check.BWART IS NULL)
+           AND po_check.EINDT > ADD_DAYS(CURRENT_DATE, -30)
+      )
+  ),
 
+  ----------------------------------------------------------------
+  -- 9) pick latest PO per (Display_ID,DC)
   numbered AS (
     SELECT
       bd.*,
@@ -206,26 +206,53 @@ WITH
     FROM base_data bd
   )
 
+-- 10a) AutoDelisting errors
 SELECT
+  'BUY AutoDelisting Job Error'        AS RootCause,
   BuyingDirector,
   Display_ID,
   Product_Description,
-  -- turn numeric flags into Y/N
-  CASE WHEN AnyStoreValidListing    = 1 THEN 'Y' ELSE 'N' END AS StoreListed,
-  CASE WHEN AnyValidSubstitution   = 1 THEN 'Y' ELSE 'N' END AS PendingSubstitution,
-  Case when AnyStoreValidListing    = 1 and AnyValidSubstitution = 0 then 'Y' ELSE 'N' END as ListedWithoutPendingSubstitution,
+  CASE WHEN AnyStoreValidListingFlag = 1 THEN 'Y' ELSE 'N' END AS StoreListed,
+  CASE WHEN AnyValidSubstitutionFlag = 1 THEN 'Y' ELSE 'N' END AS PendingSubstitution,
+  CASE WHEN AnyStoreValidListingFlag = 1 AND AnyValidSubstitutionFlag = 0 THEN 'Y' ELSE 'N' END AS ListedWithoutPendingSubstitution,
   DC,
   DC_Status,
   DCStatusValidFrom,
   Store,
   Store_Status,
   StoreStatusValidFrom,
---  MARD_DC_Stock,
   DC_Stock,
   OpenPos,
   LatestPO,
-  PODeliveryDate  
-
+  PODeliveryDate
 FROM numbered
 WHERE rn = 1
+  AND AnyStoreValidListingFlag = 1
+  AND AnyValidSubstitutionFlag = 0
+
+UNION ALL
+
+-- 10b) Store-status errors
+SELECT
+  'SCM Store Status Error'             AS RootCause,
+  BuyingDirector,
+  Display_ID,
+  Product_Description,
+  CASE WHEN AnyStoreValidListingFlag = 1 THEN 'Y' ELSE 'N' END AS StoreListed,
+  CASE WHEN AnyValidSubstitutionFlag = 1 THEN 'Y' ELSE 'N' END AS PendingSubstitution,
+  CASE WHEN AnyStoreValidListingFlag = 1 AND AnyValidSubstitutionFlag = 0 THEN 'Y' ELSE 'N' END AS ListedWithoutPendingSubstitution,
+  DC,
+  DC_Status,
+  DCStatusValidFrom,
+  Store,
+  Store_Status,
+  StoreStatusValidFrom,
+  DC_Stock,
+  OpenPos,
+  LatestPO,
+  PODeliveryDate
+FROM numbered
+WHERE rn = 1
+  AND AllStoresStatus30Flag = 1
+
 ORDER BY BuyingDirector, Display_ID;
