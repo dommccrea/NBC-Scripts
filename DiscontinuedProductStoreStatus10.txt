@@ -85,7 +85,12 @@ WITH
 
     FROM filtered_wlk1 w
 
-      LEFT JOIN WRF3       r   ON r.LOCLB = w.FILIA
+      LEFT JOIN WRF3       r   ON r.LOCLB = w.FILIA 
+                              and  R.LOCLB LIKE 'GD%' 
+                              and R.DATAB   <= CURRENT_DATE
+                              AND R.DATBI  >= CURRENT_DATE 
+                              and (r.matkl is null or r.matkl = '')
+
       LEFT JOIN MARC       dc  ON dc.MATNR = w.ARTNR 
                              AND dc.WERKS = w.FILIA 
                              AND dc.MMSTA IN ('20','21','30')
