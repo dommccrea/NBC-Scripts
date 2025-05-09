@@ -54,6 +54,28 @@ WITH
       ON DS.StoreCode = SG.StoreCode
   ),
 
+ ----------------------------------------------------------------
+  -- 4b) any valid substitution per store
+  valid_substitutions AS (
+    SELECT DISTINCT
+      F.ORIGINAL_ART_NR AS ARTNR,
+      F.ASORTFILIA       AS StoreCode
+    FROM WRF_FOLUP_TYP_A F
+    WHERE  F.DATE_TO   >= CURRENT_DATE
+      -- you can also filter by F.TYPE or whatever column qualifies as a "substitution"
+  ),
+
+  ----------------------------------------------------------------
+  -- 4c) roll that up to per (ARTNR,DC) via the same dc_supply
+  substitution_per_dc AS (
+    SELECT DISTINCT
+      VS.ARTNR,
+      DS.DC
+    FROM valid_substitutions VS
+    JOIN dc_supply DS
+      ON DS.StoreCode = VS.StoreCode
+  ),
+
   -- 5) your main payload, now with a 1/0 flag from listing_per_dc
   base_data AS (
     SELECT
@@ -81,7 +103,18 @@ WITH
       CASE 
         WHEN lpd.ARTNR IS NOT NULL THEN 1
         ELSE 0
-      END                      AS AnyStoreValidListingFlag
+      END                      AS AnyStoreValidListingFlag,
+
+      -- flag: any valid substitution?
+      CASE WHEN spd.ARTNR IS NOT NULL THEN 1 ELSE 0 END
+        AS AnyValidSubstitution,
+
+      -- both flags together
+      CASE
+        WHEN lpd.ARTNR IS NOT NULL
+         AND spd.ARTNR IS NOT NULL
+        THEN 1 ELSE 0
+      END AS ListingAndSubstitution
 
     FROM filtered_wlk1 w
 
@@ -126,6 +159,12 @@ WITH
         ON lpd.ARTNR = w.ARTNR 
        AND lpd.DC    = dc.WERKS
 
+      -- bring in the substitution flag
+      LEFT JOIN substitution_per_dc spd
+        ON spd.ARTNR = w.ARTNR
+       AND spd.DC    = dc.WERKS
+
+
     WHERE
       store.MMSTA <> '30'
       AND dc.MMSTA IN ('20','21','30')
@@ -157,10 +196,10 @@ SELECT
   BuyingDirector,
   Display_ID,
   Product_Description,
-CASE
-    WHEN AnyStoreValidListingFlag = 1 THEN 'Y'
-    ELSE 'N'
-  END AS StoreListed,
+  -- turn numeric flags into Y/N
+  CASE WHEN AnyStoreValidListing    = 1 THEN 'Y' ELSE 'N' END AS StoreListed,
+  CASE WHEN AnyValidSubstitution   = 1 THEN 'Y' ELSE 'N' END AS HasSubstitution,
+  CASE WHEN ListingAndSubstitution = 1 THEN 'Y' ELSE 'N' END AS BothFlags,
   DC,
   DC_Status,
   DCStatusValidFrom,
