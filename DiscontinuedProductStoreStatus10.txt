@@ -81,15 +81,24 @@ WITH
       CASE 
         WHEN lpd.ARTNR IS NOT NULL THEN 1
         ELSE 0
-      END                      AS AnyStoreValidListingFlag
+      END                      AS AnyStoreValidListingFlag,
+
+     CASE 
+        WHEN SUM(
+               CASE WHEN store.MMSTA <> '30' THEN 1 ELSE 0 END
+             ) OVER (PARTITION BY w.ARTNR, dc.WERKS) = 0
+        THEN 1
+        ELSE 0
+      END                      AS AllStoresStatus30Flag
 
     FROM filtered_wlk1 w
 
-      LEFT JOIN WRF3       r   ON r.LOCLB = w.FILIA 
-                              and  R.LOCLB LIKE 'GD%' 
-                              and R.DATAB   <= CURRENT_DATE
-                              AND R.DATBI  >= CURRENT_DATE 
-                              and (r.matkl is null or r.matkl = '')
+      LEFT JOIN WRF3       r   ON r.LOCLB = w.FILIA
+
+        and  R.LOCLB LIKE 'GD%' and R.DATAB   <= CURRENT_DATE
+      AND R.DATBI  >= CURRENT_DATE and (r.matkl is null or r.matkl = '')
+
+
 
       LEFT JOIN MARC       dc  ON dc.MATNR = w.ARTNR 
                              AND dc.WERKS = w.FILIA 
@@ -97,7 +106,7 @@ WITH
       LEFT JOIN MARC       store 
                              ON store.MATNR = w.ARTNR 
                             AND store.WERKS = r.LOCNR 
-                            AND store.MMSTA <> '30'
+                            
       LEFT JOIN MARD       mard 
                              ON mard.MATNR = w.ARTNR 
                             AND mard.WERKS = w.FILIA 
@@ -127,8 +136,8 @@ WITH
        AND lpd.DC    = dc.WERKS
 
     WHERE
-      store.MMSTA <> '30'
-      AND dc.MMSTA IN ('20','21','30')
+      
+      dc.MMSTA IN ('20','21','30')
       AND dc.MMSTD  < ADD_DAYS(CURRENT_DATE,-7)
       AND Nmard.LABST < 10
 --     AND mard.LABST = 0
@@ -161,6 +170,9 @@ CASE
     WHEN AnyStoreValidListingFlag = 1 THEN 'Y'
     ELSE 'N'
   END AS StoreListed,
+
+  CASE WHEN AllStoresStatus30Flag    = 1 THEN 'Y' ELSE 'N' END
+    AS AllStoresHaveStatus30,
   DC,
   DC_Status,
   DCStatusValidFrom,
