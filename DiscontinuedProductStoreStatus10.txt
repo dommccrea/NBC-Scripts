@@ -59,7 +59,7 @@ WITH
   valid_substitutions AS (
     SELECT DISTINCT
       F.ORIGINAL_ART_NR AS ARTNR,
-      F.ASORTFILIA       AS StoreCode
+      F.ASORT       AS StoreCode
     FROM WRF_FOLUP_TYP_A F
     WHERE  F.DATE_TO   >= CURRENT_DATE
       -- you can also filter by F.TYPE or whatever column qualifies as a "substitution"
@@ -103,7 +103,7 @@ WITH
       CASE 
         WHEN lpd.ARTNR IS NOT NULL THEN 1
         ELSE 0
-      END                      AS AnyStoreValidListingFlag,
+      END                      AS AnyStoreValidListing,
 
       -- flag: any valid substitution?
       CASE WHEN spd.ARTNR IS NOT NULL THEN 1 ELSE 0 END
