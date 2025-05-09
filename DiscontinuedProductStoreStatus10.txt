@@ -186,5 +186,7 @@ CASE
   PODeliveryDate  
 
 FROM numbered
-WHERE rn = 1
+WHERE rn = 1   
+  AND AnyStoreValidListingFlag = 1
+  AND AllStoresStatus30Flag    = 1
 ORDER BY BuyingDirector, Display_ID;
