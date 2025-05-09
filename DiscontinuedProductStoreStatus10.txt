@@ -36,7 +36,8 @@ WITH
       R.LOCLB    AS DC,
       R.LOCNR    AS StoreCode
     FROM WRF3 R
-    WHERE R.LOCLB LIKE 'GD%'
+    WHERE R.LOCLB LIKE 'GD%' and R.DATAB   <= CURRENT_DATE
+      AND R.DATBI  >= CURRENT_DATE and (r.matkl is null or r.matkl = '')
       
   ),
 
@@ -91,7 +92,7 @@ WITH
       LEFT JOIN MARC       store 
                              ON store.MATNR = w.ARTNR 
                             AND store.WERKS = r.LOCNR 
-                            AND store.MMSTA = '10'
+                            AND store.MMSTA <> '30'
       LEFT JOIN MARD       mard 
                              ON mard.MATNR = w.ARTNR 
                             AND mard.WERKS = w.FILIA 
@@ -121,7 +122,7 @@ WITH
        AND lpd.DC    = dc.WERKS
 
     WHERE
-      store.MMSTA   = '10'
+      store.MMSTA <> '30'
       AND dc.MMSTA IN ('20','21','30')
       AND dc.MMSTD  < ADD_DAYS(CURRENT_DATE,-7)
       AND Nmard.LABST < 10
