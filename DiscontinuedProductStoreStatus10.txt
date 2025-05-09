@@ -54,26 +54,39 @@ WITH
       ON DS.StoreCode = SG.StoreCode
   ),
 
- ----------------------------------------------------------------
-  -- 4b) any valid substitution per store
+  ----------------------------------------------------------------
+  -- 4b) grab each active substitution *group*
   valid_substitutions AS (
     SELECT DISTINCT
       F.ORIGINAL_ART_NR AS ARTNR,
-      F.ASORT       AS StoreCode
+      F.ASORT           AS SubstGroup
     FROM WRF_FOLUP_TYP_A F
-    WHERE  F.DATE_TO   >= CURRENT_DATE
-      -- you can also filter by F.TYPE or whatever column qualifies as a "substitution"
+    WHERE F.DATE_FROM <= CURRENT_DATE
+      AND F.DATE_TO   >= CURRENT_DATE
   ),
 
   ----------------------------------------------------------------
-  -- 4c) roll that up to per (ARTNR,DC) via the same dc_supply
+  -- 4c) expand each substitution‐group into its member stores
+  substitution_stores AS (
+    SELECT
+      VS.ARTNR,
+      Z.LOCNR        AS StoreCode
+    FROM valid_substitutions VS
+    JOIN WRSZ Z
+      ON Z.ASORT     = VS.SubstGroup
+     AND Z.DATAB     <= CURRENT_DATE
+     AND Z.DATBI     >= CURRENT_DATE
+  ),
+
+  ----------------------------------------------------------------
+  -- 4d) roll those stores up to (ARTNR,DC)
   substitution_per_dc AS (
     SELECT DISTINCT
-      VS.ARTNR,
+      SS.ARTNR,
       DS.DC
-    FROM valid_substitutions VS
+    FROM substitution_stores SS
     JOIN dc_supply DS
-      ON DS.StoreCode = VS.StoreCode
+      ON DS.StoreCode = SS.StoreCode
   ),
 
   -- 5) your main payload, now with a 1/0 flag from listing_per_dc
