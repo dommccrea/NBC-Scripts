@@ -170,6 +170,7 @@ WITH
       AND dc.MMSTA IN ('20','21','30')
       AND dc.MMSTD  < ADD_DAYS(CURRENT_DATE,-7)
       AND Nmard.LABST < 10
+-- consider adjusting to less than 500
 --     AND mard.LABST = 0
       AND NOT EXISTS (
       SELECT 1
