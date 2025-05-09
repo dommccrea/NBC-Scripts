@@ -105,7 +105,7 @@ WITH
       LEFT JOIN MARC       dc  ON dc.MATNR = w.ARTNR 
                              AND dc.WERKS = w.FILIA 
                              AND dc.MMSTA IN ('20','21','30')
-      LEFT JOIN MARC       store 
+      inner JOIN MARC       store 
                              ON store.MATNR = w.ARTNR 
                             AND store.WERKS = r.LOCNR 
                             
