@@ -60,6 +60,7 @@ WITH
   base_data AS (
     SELECT
       RIGHT(w.ARTNR,6)         AS Display_ID,
+      case when SUBSTRING(MVKE.PRODH,5,1) = '1' then 'Core' when SUBSTRING(MVKE.PRODH,5,1) = '3' then 'Seasonal' else '' end as Hierarchy,
       dc.WERKS                 AS DC,
       dc.MMSTA                 AS DC_Status,
       dc.MMSTD                 AS DCStatusValidFrom,
@@ -168,6 +169,7 @@ SELECT
   BuyingDirector,
   Display_ID,
   Product_Description,
+Hierarchy,
 CASE
     WHEN AnyStoreValidListingFlag = 1 THEN 'Y'
     ELSE 'N'
