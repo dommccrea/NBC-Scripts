@@ -151,11 +151,11 @@ CASE
 
   CASE WHEN AllStoresStatus30Flag    = 1 THEN 'Y' ELSE 'N' END
     AS AllStoresHaveStatus30,
-    case when Hierarchy = 'Core' and DC_Status = '21' then '1. BA to Change DC Status to 20 for Core Article, NBUY to action'
-    when StoreStatusValidFrom = current_date then '0. Recently Updated Store Status, wait overnight'
-    when StoreStatusValidFrom < DCStatusValidFrom then '2. SCM Store Status Valid From Not Updated, Update to todays date'
-    when DC like 'GD2%' and StoreStatusValidFrom < '20250415' then '3.SCM Store Status changed before WRF3 update, update Store Status Valid From to todays date' 
-    else '4. Autodelist failure unknown. Attempt store status and IPO to investigate' end as ErrorAndActions,
+    case when Hierarchy = 'Core' and DC_Status = '21' then '1. NBUY Incorrect DC Status (21) for Core Article -> NBUY to Change DC Status to 20 for Core Article'
+    when StoreStatusValidFrom = current_date then '0. Recently Updated Store Status -> Wait Overnight'
+    when StoreStatusValidFrom < DCStatusValidFrom then '2. SCM Store Status Valid From prior to DC Status Valid From -> NSCM Update to Todays Date'
+    when DC like 'GD2%' and StoreStatusValidFrom < '20250415' then '3. SCM Store Status Changed Before WRF3 Update -> NSCM Update Store Status Valid From to Todays Date' 
+    else '4. Autodelist Failure Unknown -> NSCM Attempt Store Status Update and BUY IPO to Investigate' end as ErrorAndActions,
   DC,
   DC_Status,
   DCStatusValidFrom,
