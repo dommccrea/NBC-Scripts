@@ -1,5 +1,3 @@
--- Report to find products that would be due for autodelisting but missing --
-
 WITH
   ----------------------------------------------------------------
   -- 0) (Optional) your original filter on WLK1 for DC-level rows
@@ -64,21 +62,13 @@ WITH
       dc.WERKS                 AS DC,
       dc.MMSTA                 AS DC_Status,
       dc.MMSTD                 AS DCStatusValidFrom,
-      store.WERKS              AS Store,
-      store.MMSTA              AS Store_Status,
-      store.MMSTD              AS StoreStatusValidFrom,
+      store.werks              AS Store,
+      store.mmsta              AS Store_Status,
+      store.mmstd              AS StoreStatusValidFrom,
       mard.LABST               AS MARD_DC_Stock,
       CAST( Nmard.LABST AS INTEGER )               AS DC_Stock,
-      CASE 
-        WHEN (po.LOEKZ <> 'L' 
-              AND (po.ELIKZ = '' OR po.BWART IS NULL)) 
-        THEN 'X' 
-        ELSE '' 
-      END                       AS OpenPos,
-      MAKT.MAKTX               AS Product_Description,
-      po.EBELN                 AS LatestPO,
-      po.EINDT                 AS PODeliveryDate,
-      T024.EKNAM               AS BuyingDirector,
+            MAKT.MAKTX               AS Product_Description,
+           T024.EKNAM               AS BuyingDirector,
 
       -- ←←← This is the new bit ←←←
       CASE 
@@ -86,27 +76,24 @@ WITH
         ELSE 0
       END                      AS AnyStoreValidListingFlag,
 
-     CASE 
-        WHEN SUM(
-               CASE WHEN store.MMSTA <> '30' THEN 1 ELSE 0 END
-             ) OVER (PARTITION BY w.ARTNR, dc.WERKS) = 0
-        THEN 1
-        ELSE 0
-      END                      AS AllStoresStatus30Flag
+     CASE
+        WHEN MAX(CASE WHEN store.mmsta <> '30' THEN 1 ELSE 0 END)
+             OVER (PARTITION BY w.ARTNR, dc.WERKS) = 0
+        THEN 1 ELSE 0
+      END                                         AS AllStoresStatus30Flag
 
     FROM filtered_wlk1 w
 
       LEFT JOIN WRF3       r   ON r.LOCLB = w.FILIA
-
         and  R.LOCLB LIKE 'GD%' and R.DATAB   <= CURRENT_DATE
       AND R.DATBI  >= CURRENT_DATE and (r.matkl is null or r.matkl = '')
-
 
 
       LEFT JOIN MARC       dc  ON dc.MATNR = w.ARTNR 
                              AND dc.WERKS = w.FILIA 
                              AND dc.MMSTA IN ('20','21','30')
-      inner JOIN MARC       store 
+    
+     inner JOIN MARC       store 
                              ON store.MATNR = w.ARTNR 
                             AND store.WERKS = r.LOCNR 
                             
@@ -128,39 +115,26 @@ WITH
                            AND MVKE.VTWEG = '10'
                            AND SUBSTRING(MVKE.PRODH,5,1) IN ('1','3')
       LEFT JOIN T024        ON T024.EKGRP = MVKE.ZZPRGRP
-      LEFT JOIN ZP2P_PO_DATA po 
-                           ON po.MATNR = w.ARTNR 
-                          AND po.WERKS = dc.WERKS 
-                          AND po.EKORG = '5998'
-
+ 
       -- ←←← join the flag CTE ←←←
       LEFT JOIN listing_per_dc lpd 
         ON lpd.ARTNR = w.ARTNR 
        AND lpd.DC    = dc.WERKS
 
     WHERE
-      
       dc.MMSTA IN ('20','21','30')
       AND dc.MMSTD  < ADD_DAYS(CURRENT_DATE,-7)
       AND Nmard.LABST < 10
 --     AND mard.LABST = 0
-      AND NOT EXISTS (
-      SELECT 1
-      FROM ZP2P_PO_DATA po_check
-      WHERE po_check.MATNR = w.ARTNR
-        AND po_check.WERKS = dc.WERKS
-        AND po_check.LOEKZ <> 'L'
-        AND (po_check.ELIKZ = '' or po_check.BWART is null)
-        AND po_check.EINDT > ADD_DAYS(CURRENT_DATE, -30)
-    )
-),
+      ),
 
+  -- 7) rank each (Display_ID,DC) by the *store* valid-from date
   numbered AS (
     SELECT
       bd.*,
       ROW_NUMBER() OVER (
         PARTITION BY Display_ID, DC
-        ORDER BY PODeliveryDate DESC
+        ORDER BY StoreStatusValidFrom DESC
       ) AS rn
     FROM base_data bd
   )
@@ -177,17 +151,17 @@ CASE
 
   CASE WHEN AllStoresStatus30Flag    = 1 THEN 'Y' ELSE 'N' END
     AS AllStoresHaveStatus30,
+    case when Hierarchy = 'Core' and DC_Status = '21' then '1. BA to Change DC Status to 20 for Core Article, NBUY to action'
+    when StoreStatusValidFrom < DCStatusValidFrom then '2. SCM Store Status Valid From Not Updated, Update to todays date'
+    when DC like 'GD2%' and StoreStatusValidFrom < '20250415' then '3.SCM Store Status changed before WRF3 update, update Store Status Valid From to todays date' 
+    else '4. Autodelist failure unknown. Attempt store status and IPO to investigate' end as ErrorAndActions,
   DC,
   DC_Status,
   DCStatusValidFrom,
   Store,
   Store_Status,
   StoreStatusValidFrom,
---  MARD_DC_Stock,
-  DC_Stock,
-  OpenPos,
-  LatestPO,
-  PODeliveryDate  
+  DC_Stock
 
 FROM numbered
 WHERE rn = 1   
