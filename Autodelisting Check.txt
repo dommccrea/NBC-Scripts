@@ -1,3 +1,4 @@
+-- This script will let us check if autodelisting works
 WITH
   ----------------------------------------------------------------
   -- 0) (Optional) your original filter on WLK1 for DC-level rows
