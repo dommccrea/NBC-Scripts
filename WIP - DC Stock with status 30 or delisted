@@ -1,0 +1,52 @@
+select distinct
+right(mard.matnr,6) Article
+,makt.maktx Description
+,mard.werks DC
+,marc.mmsta DC_Status
+,mard.labst DC_Stock
+,sum(po.menge) On_Order_Stock
+,case when (mard.labst + sum(po.menge)) is null then mard.labst else (mard.labst + sum(po.menge)) end Total_Stock
+,wlk1.datab ListingValidFrom
+,wlk1.datbi ListingValidTo
+
+
+from NSDM_V_MARD MARD
+
+left join zp2p_po_data PO on
+    mard.matnr = PO.matnr and
+    mard.werks = po.werks and
+    po.LOEKZ <> 'L' and
+    po.elikz <> 'X' and
+    po.ekorg = '5998'
+
+
+left join marc on
+    mard.matnr = marc.matnr and
+    mard.werks = marc.werks
+
+left join wlk1 on
+    wlk1.artnr = marc.matnr and
+    wlk1.filia = marc.werks and
+    wlk1.datbi > add_Days(current_date,-60)
+
+    left join MAKT
+    on MAKT.MATNR = MARD.MATNR
+    and MAKT.SPRAS = 'E'
+
+where
+mard.werks in ('GD07','GD06') AND
+mard.lgort = '0001' and
+mard.labst > 0 and
+marc.mmsta in ('30')
+
+Group by
+right(mard.matnr,6)
+,mard.werks
+,mard.labst
+,marc.mmsta
+,wlk1.datab
+,wlk1.datbi
+,makt.maktx
+
+order by
+Article, DC
