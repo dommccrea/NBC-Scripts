@@ -1,0 +1,76 @@
+select distinct
+
+mara.matnr Display
+,MAKT.MAKTX Description
+,MARA.MATKL ACG
+,T024.EKNAM Buying_Dicrector
+,marc.mmsta DC_Status
+,marc.werks DC
+,Case when dc.artnr is not null then 'x' else '' end DC_Listing
+,Case when wrf3.loclb is not null then 'x' else '' end Store_Listing
+,Case when (dc.artnr is not null or wrf3.loclb is not null) AND marc.mmsta = '30' then 'Update Article Status or Delist' else '' end Action
+
+from mara
+
+/* Master data based on country */
+LEFT JOIN MVKE
+on MVKE.MATNR = mara.MATNR
+and MVKE.VKORG = 5998
+and MVKE.VTWEG = 10
+
+
+/* Material Description */
+    left join MAKT
+    on MAKT.MATNR = MARA.MATNR
+    and MAKT.SPRAS = 'E'
+
+/* Buyer */
+
+    left join T024
+    on T024.EKGRP = mvke.ZZPRGRP
+
+    left join marc
+    on marc.matnr = mara.matnr
+
+/*DC Listing */
+
+    left join WLK1 dc
+    on dc.ARTNR = marc.MATNR
+    and MARC.WERKS = dc.FILIA
+    and dc.DATBI >= '99991231'
+and MARC.WERKS LIKE 'GD%'
+
+/*STORE Listing */
+
+    left join wlk1 store
+    on store.ARTNR = Marc.MATNR
+    and store.DATBI >= '99991231'
+    and store.FILIA NOT LIKE 'GD%'
+
+    left join wrs1
+    on store.Filia = WRS1.ASORT
+    and Assortyp = 'ZCSA'
+    and WRS1.VKORG = '5998'
+
+left join wrsz
+on wrsz.asort = store.filia
+and wrsz.datbi >= '99991231'
+and store.FILIA NOT LIKE 'GD%'
+
+left join wrf3
+on wrf3.locnr = wrsz.locnr
+and wrf3.matkl is null
+and wrf3.loclb = dc.filia
+
+where
+mara.mtart = 'Z100'
+and mara.attyp = 12
+and MARC.WERKS LIKE 'GD%'
+and marc.mmsta IN ('30')
+and (dc.artnr is not null or wrf3.loclb is not null)
+
+and left(MVKE.PRODH,5) <> '00002'
+and mvke.vkorg = '5998'
+
+order by
+Action DESC,Display,DC
