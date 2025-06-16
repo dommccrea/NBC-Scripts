@@ -1,0 +1,96 @@
+WITH
+  store_info AS (
+    SELECT ARTNR,
+           FILIA AS STORE_FILIA,
+           DATAB AS STORE_VALID_FROM,
+           DATBI AS STORE_VALID_TO
+    FROM (
+      SELECT ARTNR,
+             FILIA,
+             DATAB,
+             DATBI,
+             ROW_NUMBER() OVER (PARTITION BY ARTNR ORDER BY DATBI DESC) AS RN
+      FROM WLK1
+      WHERE (FILIA LIKE '%MIN%' OR FILIA LIKE '%DER%' OR FILIA LIKE '%PRE%' OR
+             FILIA LIKE '%DAN%' OR FILIA LIKE '%JKT%' OR FILIA LIKE '%BRE%' OR
+             FILIA LIKE '%STP%' OR FILIA LIKE '%RGY%')
+        AND FILIA NOT LIKE '%DUMY%'
+        AND FILIA NOT LIKE '%000%'
+        AND DATAB <= CURRENT_DATE
+        AND DATBI >= CURRENT_DATE
+    ) ranked_store
+    WHERE ranked_store.RN = 1
+  ),
+  dc_info AS (
+    SELECT ARTNR,
+           FILIA AS DC_FILIA,
+           DATAB AS DC_VALID_FROM,
+           DATBI AS DC_VALID_TO
+    FROM (
+      SELECT ARTNR,
+             FILIA,
+             DATAB,
+             DATBI,
+             ROW_NUMBER() OVER (PARTITION BY ARTNR ORDER BY DATBI DESC) AS RN
+      FROM WLK1
+      WHERE FILIA LIKE 'GD%'
+        AND DATAB <= CURRENT_DATE
+        AND DATBI >= CURRENT_DATE
+    ) ranked_dc
+    WHERE ranked_dc.RN = 1
+  )
+SELECT DISTINCT
+  m.MATNR                           AS Article_ID,
+  d.MAKTX                           AS Description,
+  m.MATKL                           AS ACG,
+  m.MTART                           AS Article_Type,
+  CASE
+    WHEN m.ATTYP = '00' THEN 'Single'
+    WHEN m.ATTYP = '01' THEN 'Generic'
+    WHEN m.ATTYP = '02' THEN 'Variant'
+    WHEN m.ATTYP = '12' THEN 'Display'
+  END                               AS Article_Category,
+  CASE
+    WHEN RIGHT(LEFT(v.PRODH,5),1) = '1' THEN 'Core Range'
+    WHEN RIGHT(LEFT(v.PRODH,5),1) = '2' THEN 'Special Buy'
+    WHEN RIGHT(LEFT(v.PRODH,5),1) = '3' THEN 'Seasonal'
+    ELSE ''
+  END                               AS Product_Hierarchy,
+  CASE
+    WHEN m.BSTAT = '30' THEN 'Tendering Failed'
+    WHEN m.BSTAT = '98' THEN 'Ready for Deletion'
+    WHEN m.BSTAT = '99' THEN 'Ready for Archiving'
+    ELSE 'Other'
+  END                               AS Article_Status,
+  c.WERKS                           AS DC,
+  c.MMSTA                           AS DC_Status,
+  c.MMSTD                           AS DC_Status_Valid_From,
+  dc_info.DC_VALID_FROM             AS DC_Listing_Valid_From,
+  dc_info.DC_VALID_TO               AS DC_Listing_Valid_To,
+  store_info.STORE_VALID_FROM      AS Store_Valid_From,
+  store_info.STORE_VALID_TO        AS Store_Valid_To
+FROM MARA AS m
+JOIN MVKE AS v
+  ON v.MATNR = m.MATNR
+ AND v.VKORG = '5998'
+ AND v.VTWEG = '10'
+LEFT JOIN MAKT AS d
+  ON d.MATNR = m.MATNR
+ AND d.SPRAS = 'E'
+LEFT JOIN store_info
+  ON store_info.ARTNR = m.MATNR
+LEFT JOIN dc_info
+  ON dc_info.ARTNR = m.MATNR
+LEFT JOIN MARC AS c
+  ON c.MATNR = m.MATNR
+ AND c.WERKS = dc_info.DC_FILIA
+WHERE
+  m.BSTAT   <> '30'
+  AND m.MTART  = 'Z100'
+  AND m.ATTYP IN ('00','01','02','12')
+  AND (
+    dc_info.DC_FILIA IS NOT NULL
+    OR store_info.STORE_FILIA IS NOT NULL
+  )
+ORDER BY
+  m.MATNR;
