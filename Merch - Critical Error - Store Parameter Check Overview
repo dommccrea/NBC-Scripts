@@ -1,0 +1,222 @@
+WITH X AS (
+    SELECT DISTINCT
+        LTRIM(MALG.MATNR,0)                                 AS DISPLAY,
+        MAKTX                                              AS DESCRIPTION,
+        CONCAT(CONCAT(MVKE.ZZPRGRP,' - '),T.EKNAM)         AS BUYING_DIRECTOR,
+        POINFO.DELIVERY                                    AS LATESTPO,
+        LEFT(MALG.LAYGR,3)                                 AS REGION,
+        SUB.POSTED_ON                                      AS POSTED_ON,
+        MALG.PREQN                                         AS MIN,
+        MALG.SHQNM                                         AS MAX,
+        WLMV.LM_DATE_FR                                    AS WEEKLY_VERSION,
+        WLK1.DATAB                                         AS STORE_LISTING,
+        HISTORICLISTING.DATAB                              AS HISTORIC_LISTING,
+        MARC.MMSTA                                         AS DC_STATUS,
+        DC.DATAB                                           AS DCLISTINGFROM,
+        DC.FILIA                                           AS DCLISTINGDC,
+        DC.ARTNR                                           AS DCLISTINGARTICLE
+    FROM MALG
+    LEFT JOIN MAKT
+        ON MAKT.MATNR = MALG.MATNR
+       AND MAKT.SPRAS = 'E'
+    INNER JOIN WLMV
+        ON WLMV.LAYGR = MALG.LAYGR
+       AND WLMV.LM_DATE_FR BETWEEN CURRENT_DATE AND ADD_DAYS(CURRENT_DATE,6)
+       AND MALG.LMVER = WLMV.LAYMOD_VER
+    LEFT JOIN WRST
+        ON WRST.ASORT = MALG.LAYGR
+       AND WRST.SPRAS = 'E'
+    LEFT JOIN WLK1
+        ON WLK1.ARTNR = MALG.MATNR
+       AND WLK1.FILIA = MALG.LAYGR
+       AND WLK1.DATBI >= ADD_DAYS(CURRENT_DATE,5)
+    LEFT JOIN MARA
+        ON MARA.MATNR = WLK1.ARTNR
+       AND WLK1.DATBI >= CURRENT_DATE
+    LEFT JOIN MARC
+        ON MARC.MATNR = WLK1.ARTNR
+       AND MARC.WERKS = CASE
+            WHEN WLK1.FILIA LIKE '%MIN-%' AND (MARA.TEMPB = '9A' OR MARA.TEMPB = '8A') THEN 'GD21'
+            WHEN WLK1.FILIA LIKE '%MIN-%' AND (MARA.TEMPB <> '9A' OR MARA.TEMPB <> '8A') THEN 'GD01'
+            WHEN WLK1.FILIA LIKE '%DER-%' AND (MARA.TEMPB = '9A' OR MARA.TEMPB = '8A') THEN 'GD22'
+            WHEN WLK1.FILIA LIKE '%DER-%' AND (MARA.TEMPB <> '9A' OR MARA.TEMPB <> '8A') THEN 'GD02'
+            WHEN WLK1.FILIA LIKE '%STP-%'                                           THEN 'GD03'
+            WHEN WLK1.FILIA LIKE '%PRE-%' AND (MARA.TEMPB = '9A' OR MARA.TEMPB = '8A') THEN 'GD21'
+            WHEN WLK1.FILIA LIKE '%PRE-%' AND (MARA.TEMPB <> '9A' OR MARA.TEMPB <> '8A') THEN 'GD04'
+            WHEN WLK1.FILIA LIKE '%DAN-%' AND (MARA.TEMPB = '9A' OR MARA.TEMPB = '8A') THEN 'GD22'
+            WHEN WLK1.FILIA LIKE '%DAN-%' AND (MARA.TEMPB <> '9A' OR MARA.TEMPB <> '8A') THEN 'GD05'
+            WHEN WLK1.FILIA LIKE '%BRE-%'                                           THEN 'GD06'
+            WHEN WLK1.FILIA LIKE '%RGY-%'                                           THEN 'GD07'
+            WHEN WLK1.FILIA LIKE '%JKT-%'                                           THEN 'GD08'
+        END
+       AND WLK1.FILIA NOT LIKE '%DUMY%'
+       AND WLK1.FILIA NOT LIKE '%000%'
+    INNER JOIN MVKE
+        ON MVKE.MATNR = MALG.MATNR
+       AND MVKE.VKORG = '5998'
+       AND MVKE.VTWEG = '10'
+    LEFT JOIN T024 T
+        ON T.EKGRP = MVKE.ZZPRGRP
+    LEFT JOIN WLK1 AS HISTORICLISTING
+        ON HISTORICLISTING.ARTNR = MALG.MATNR
+       AND HISTORICLISTING.FILIA = MALG.LAYGR
+       AND HISTORICLISTING.DATBI BETWEEN ADD_DAYS(CURRENT_DATE,-70) AND CURRENT_DATE
+    LEFT JOIN WLK1 AS DC
+        ON DC.ARTNR = MARC.MATNR
+       AND DC.DATBI >= CURRENT_DATE
+       AND DC.FILIA = MARC.WERKS
+
+    LEFT JOIN (
+        SELECT
+            PO.MATNR,
+            CASE
+                WHEN STORE.FILIA LIKE '%MIN-%' AND (MARA.TEMPB = '9A' OR MARA.TEMPB = '8A') THEN 'GD21'
+                WHEN STORE.FILIA LIKE '%MIN-%' AND (MARA.TEMPB <> '9A' OR MARA.TEMPB <> '8A') THEN 'GD01'
+                WHEN STORE.FILIA LIKE '%DER-%' AND (MARA.TEMPB = '9A' OR MARA.TEMPB = '8A') THEN 'GD22'
+                WHEN STORE.FILIA LIKE '%DER-%' AND (MARA.TEMPB <> '9A' OR MARA.TEMPB <> '8A') THEN 'GD02'
+                WHEN STORE.FILIA LIKE '%STP-%'                                           THEN 'GD03'
+                WHEN STORE.FILIA LIKE '%PRE-%' AND (MARA.TEMPB = '9A' OR MARA.TEMPB = '8A') THEN 'GD21'
+                WHEN STORE.FILIA LIKE '%PRE-%' AND (MARA.TEMPB <> '9A' OR MARA.TEMPB <> '8A') THEN 'GD04'
+                WHEN STORE.FILIA LIKE '%DAN-%' AND (MARA.TEMPB = '9A' OR MARA.TEMPB = '8A') THEN 'GD22'
+                WHEN STORE.FILIA LIKE '%DAN-%' AND (MARA.TEMPB <> '9A' OR MARA.TEMPB <> '8A') THEN 'GD05'
+                WHEN STORE.FILIA LIKE '%BRE-%'                                           THEN 'GD06'
+                WHEN STORE.FILIA LIKE '%RGY-%'                                           THEN 'GD07'
+                WHEN STORE.FILIA LIKE '%JKT-%'                                           THEN 'GD08'
+            END                                                   AS WERKS,
+            MAX(PO.EINDT)                                        AS DELIVERY
+        FROM ZP2P_PO_DATA PO
+        INNER JOIN WRF1
+            ON WRF1.LOCNR = PO.WERKS
+        INNER JOIN WLK1 STORE
+            ON STORE.ARTNR = PO.MATNR
+           AND STORE.DATBI > ADD_DAYS(CURRENT_DATE,2)
+           AND STORE.FILIA NOT LIKE '%DUMY%'
+           AND STORE.FILIA NOT LIKE '%000%'
+        INNER JOIN MARA
+            ON MARA.MATNR = STORE.ARTNR
+        WHERE PO.LOEKZ <> 'L'
+          AND PO.EKORG = '5998'
+          AND PO.WERKS NOT LIKE 'GD%'
+          AND PO.EINDT > ADD_DAYS(CURRENT_DATE,-90)
+        GROUP BY
+            PO.MATNR,
+            CASE
+                WHEN STORE.FILIA LIKE '%MIN-%' AND (MARA.TEMPB = '9A' OR MARA.TEMPB = '8A') THEN 'GD21'
+                WHEN STORE.FILIA LIKE '%MIN-%' AND (MARA.TEMPB <> '9A' OR MARA.TEMPB <> '8A') THEN 'GD01'
+                WHEN STORE.FILIA LIKE '%DER-%' AND (MARA.TEMPB = '9A' OR MARA.TEMPB = '8A') THEN 'GD22'
+                WHEN STORE.FILIA LIKE '%DER-%' AND (MARA.TEMPB <> '9A' OR MARA.TEMPB <> '8A') THEN 'GD02'
+                WHEN STORE.FILIA LIKE '%STP-%'                                           THEN 'GD03'
+                WHEN STORE.FILIA LIKE '%PRE-%' AND (MARA.TEMPB = '9A' OR MARA.TEMPB = '8A') THEN 'GD21'
+                WHEN STORE.FILIA LIKE '%PRE-%' AND (MARA.TEMPB <> '9A' OR MARA.TEMPB <> '8A') THEN 'GD04'
+                WHEN STORE.FILIA LIKE '%DAN-%' AND (MARA.TEMPB = '9A' OR MARA.TEMPB = '8A') THEN 'GD22'
+                WHEN STORE.FILIA LIKE '%DAN-%' AND (MARA.TEMPB <> '9A' OR MARA.TEMPB <> '8A') THEN 'GD05'
+                WHEN STORE.FILIA LIKE '%BRE-%'                                           THEN 'GD06'
+                WHEN STORE.FILIA LIKE '%RGY-%'                                           THEN 'GD07'
+                WHEN STORE.FILIA LIKE '%JKT-%'                                           THEN 'GD08'
+            END
+    ) POINFO
+        ON POINFO.MATNR = MALG.MATNR
+       AND MARC.WERKS   = POINFO.WERKS
+
+    LEFT JOIN (
+        SELECT DISTINCT
+            MATNR,
+            WERKS,
+            POSTED_ON,
+            RANK() OVER (PARTITION BY MATNR,WERKS ORDER BY POSTED_ON DESC) AS RANKID
+        FROM ZACDC_FREE_TASK TASK
+        INNER JOIN ZACDC_FREE_TASKM TASKM ON TASK.TASKID = TASKM.TASKID
+        INNER JOIN ZACDC_FREE_TASKW TASKW ON TASK.TASKID = TASKW.TASKID
+        WHERE TRIGER = 'FT024'
+    ) SUB
+        ON SUB.MATNR = MALG.MATNR
+       AND SUB.WERKS = MARC.WERKS
+       AND SUB.RANKID = 1
+
+    WHERE
+        (   (RIGHT(LEFT(MALG.LAYGR,6),2) IN ('03','10','20','29') AND (MALG.SHQNM = 0 OR MALG.SHQNM > 500))
+         OR (RIGHT(LEFT(MALG.LAYGR,6),2) NOT IN ('03','10','20','29') AND (MALG.SHQNM = 0 OR MALG.SHQNM > 100))
+        )
+      AND MALG.LAYGR NOT LIKE '%000%'
+      AND MALG.LAYGR NOT LIKE '%-01-%'
+      AND MALG.LAYGR NOT LIKE '%99%'
+      AND MALG.LAYGR NOT LIKE '%-P%'
+      AND MALG.LAYGR NOT LIKE '%-V%'
+      AND MALG.LAYGR NOT LIKE '%-SX%'
+      AND MALG.LAYGR NOT LIKE '%SE1%'
+),
+Y AS (
+    SELECT DISTINCT
+        LTRIM(MATNR,0)            AS MATNR,
+        LEFT(MALG.LAYGR,3)        AS REGION,
+        LEFT(MALG.LAYGR,7)        AS MASTERAST,
+        LEFT(WRST.NAME1,14)       AS MASTERASTDESCRIPTION
+    FROM MALG
+    INNER JOIN WLMV
+        ON WLMV.LAYGR = MALG.LAYGR
+       AND WLMV.LM_DATE_FR BETWEEN CURRENT_DATE AND ADD_DAYS(CURRENT_DATE,6)
+       AND MALG.LMVER = WLMV.LAYMOD_VER
+    LEFT JOIN WRST
+        ON WRST.ASORT = MALG.LAYGR
+       AND WRST.SPRAS = 'E'
+    WHERE
+        (   (RIGHT(LEFT(MALG.LAYGR,6),2) IN ('03','10','20','29') AND (MALG.SHQNM = 0 OR MALG.SHQNM > 500))
+         OR (RIGHT(LEFT(MALG.LAYGR,6),2) NOT IN ('03','10','20','29') AND (MALG.SHQNM = 0 OR MALG.SHQNM > 100))
+        )
+      AND MALG.LAYGR NOT LIKE '%000%'
+      AND MALG.LAYGR NOT LIKE '%-01-%'
+      AND MALG.LAYGR NOT LIKE '%99%'
+      AND MALG.LAYGR NOT LIKE '%-P%'
+      AND MALG.LAYGR NOT LIKE '%-V%'
+      AND MALG.LAYGR NOT LIKE '%-SX%'
+      AND MALG.LAYGR NOT LIKE '%SE1%'
+)
+
+SELECT DISTINCT
+    X.DISPLAY,
+    X.DESCRIPTION,
+    X.BUYING_DIRECTOR,
+    TO_VARCHAR(TO_DATE(X.LATESTPO,'YYYYMMDD'),'DD/MM/YYYY') AS LATESTPO,
+    CASE
+        WHEN X.LATESTPO > ADD_DAYS(CURRENT_DATE,-50)
+             AND X.DCLISTINGFROM <= ADD_DAYS(CURRENT_DATE,-28)
+             AND X.DC_STATUS = '10'
+             AND X.HISTORIC_LISTING IS NULL
+        THEN '1-Priority, Add Parameters ASAP'
+        WHEN X.LATESTPO > ADD_DAYS(CURRENT_DATE,-50)
+             AND (X.DCLISTINGFROM > ADD_DAYS(CURRENT_DATE,-28)
+                  OR X.DC_STATUS <> '10')
+        THEN '1b-Priority, Add Parameters in next planogram update'
+        WHEN X.LATESTPO < ADD_DAYS(CURRENT_DATE,-50)
+             AND X.POSTED_ON IS NOT NULL
+        THEN '2-Priority, confirm remaining Old Article Stock and update as required'
+        ELSE '3-Priority, investigate why article is listed'
+    END AS ACTION,
+    CASE
+        WHEN X.LATESTPO > ADD_DAYS(CURRENT_DATE,-50) AND X.POSTED_ON IS NULL
+        THEN 'Most recent Store Delivery date '
+             || TO_VARCHAR(TO_DATE(X.LATESTPO,'YYYYMMDD'),'DD/MM/YYYY')
+        WHEN X.LATESTPO > ADD_DAYS(CURRENT_DATE,-50) AND X.POSTED_ON IS NOT NULL
+        THEN 'Most recent Store Delivery date '
+             || TO_VARCHAR(TO_DATE(X.LATESTPO,'YYYYMMDD'),'DD/MM/YYYY')
+             || ', Substitution Bulletin date '
+             || TO_VARCHAR(TO_DATE(X.POSTED_ON,'YYYYMMDD'),'DD/MM/YYYY')
+        WHEN (X.LATESTPO < ADD_DAYS(CURRENT_DATE,-50) OR X.LATESTPO IS NULL)
+             AND X.POSTED_ON IS NOT NULL
+        THEN 'Pending substitution '
+             || TO_VARCHAR(TO_DATE(X.POSTED_ON,'YYYYMMDD'),'DD/MM/YYYY')
+             || '- not currently sent to stores'
+        ELSE 'No Substitution Bulletin, no stock shipped to stores - investigate why article is listed'
+    END AS COMMENTS,
+    X.MIN,
+    X.MAX,
+    LEFT(Y.MASTERAST,50)            AS MASTERAST,
+    LEFT(Y.MASTERASTDESCRIPTION,50) AS MASTERASTDESCRIPTION,
+    TO_VARCHAR(TO_DATE(X.WEEKLY_VERSION,'YYYYMMDD'),'DD/MM/YYYY') AS WEEKLY_VERSION,
+    TO_VARCHAR(TO_DATE(X.STORE_LISTING,'YYYYMMDD'),'DD/MM/YYYY')  AS STORE_LISTING,
+    X.DC_STATUS,
+    TO_VARCHAR(TO_DATE(X.DCLISTINGFROM,'YYYYMMDD'),'DD/MM/YYYY')  AS DCLISTINGFROM
+FROM X
+LEFT JOIN Y
+    ON Y.MATNR  = X.DISPLAY
+   AND Y.REGION = X.REGION;
