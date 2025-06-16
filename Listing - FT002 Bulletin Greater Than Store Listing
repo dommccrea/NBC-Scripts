@@ -1,0 +1,154 @@
+SELECT DISTINCT
+		RIGHT (MARA.MATNR, 6) AS DisplayID,
+            MAKT_EN.MAKTX AS DESCRIPTION_EN,
+CASE WHEN RIGHT(LEFT(MVKE.PRODH, 5), 1) = '1' THEN 'Core Range'			
+     WHEN RIGHT(LEFT(MVKE.PRODH, 5), 1) = '3' THEN 'Seasonal'			
+     ELSE ''			
+END AS PRODUCT_HIERARCHY,
+            right(mara.MATKL,2)|| ' - '|| WRF_MATGRP_MD4T.LTEXT AS ASCG,
+            MARC.WERKS AS DC,
+            DC.FILIA AS DC_LISTING,
+            MARC.MMSTA AS DC_STATUS,
+            TO_VARCHAR(TO_DATE(DC.DATAB, 'YYYYMMDD'), 'DD/MM/YYYY') AS DC_VALID_FROM,
+            TO_VARCHAR(TO_DATE(DC.DATBI, 'YYYYMMDD'), 'DD/MM/YYYY') AS DC_VALID_TILL,
+            STORE.FILIA AS STORE_LISTING,
+            MARCSTORE.MMSTA AS STORE_STATUS,
+            TO_VARCHAR(TO_DATE(STORE.DATAB, 'YYYYMMDD'), 'DD/MM/YYYY') AS STORE_VALID_FROM,
+            TO_VARCHAR(TO_DATE(STORE.DATBI, 'YYYYMMDD'), 'DD/MM/YYYY') AS STORE_VALID_TILL,
+            TO_VARCHAR(TO_DATE(ZACDC_FREE_TASK.POSTED_ON, 'YYYYMMDD'), 'DD/MM/YYYY') AS Zero_SOH_Bulletin_Posted,
+            Case when (select count(*) from EKPO
+                 LEFT JOIN EKKO on EKKO.EBELN = EKPO.EBELN
+                 where Mara.MATNR = EKPO.MATNR
+                 and EKPO.WERKS = MARC.WERKS
+                 and EKPO.LOEKZ <> 'L'
+                 and EKKO.KDATB <= current_date and EKKO.KDATE >= current_date) > 0 then 'x' else '' end DC_Outline_Agreement,
+            CASE WHEN MARCSTORE.MMSTA = '10' AND MARC.MMSTA IN ('20', '21','30') AND (DC.DATBI >= CURRENT_DATE OR STORE.DATBI >= CURRENT_DATE) THEN '1. ARTICLE SHOULD BE DELISTED - STORE STATUS 10'
+                 WHEN MARCSTORE.MMSTA IN ('20', '21','99') AND MARC.MMSTA IN ('20', '21', '30') AND (DC.DATBI >= CURRENT_DATE OR STORE.DATBI >= CURRENT_DATE) THEN '2. ARTICLE SHOULD BE DELISTED - INVALID STORE STATUS 20, 21 and 99 USED'
+                 WHEN MARCSTORE.MMSTA = '11' AND MARC.MMSTA IN ('20', '21', '30') AND (DC.DATBI >= CURRENT_DATE OR STORE.DATBI >= CURRENT_DATE) THEN '3. ARTICLE SHOULD BE DELISTED - STORE STATUS 11'
+                 WHEN MARCSTORE.MMSTA = '30' AND MARC.MMSTA IN ('20', '21', '30') AND (DC.DATBI >= CURRENT_DATE OR STORE.DATBI >= CURRENT_DATE) THEN '4. ARTICLE SHOULD BE DELISTED - REVIEW IF ALL STORES UPDATED TO 30' ELSE '' END AS REVIEW
+	FROM
+		MARA
+
+      LEFT JOIN
+            WRF_MATGRP_MD4T ON
+                  WRF_MATGRP_MD4T.NODE = MARA.MATKL AND
+                  WRF_MATGRP_MD4T.SPRAS = 'E'
+
+	INNER JOIN
+		INOB ON
+			INOB.OBJEK = MARA.MATNR AND
+			INOB.OBTAB = 'MARAT' AND
+			INOB.KLART = '026'
+
+     INNER JOIN
+	      WRF_MATGRP_MD2T CG ON
+		     CG.SPRAS = 'E' AND
+		     CG.NODE = LEFT(MARA.MATKL, 4)
+
+	INNER JOIN
+		AUSP ON
+			INOB.CUOBJ = AUSP.OBJEK AND
+			AUSP.ATINN IN ('0000009663', '0000007846')
+	LEFT JOIN
+		MAST ON
+			MAST.MATNR = MARA.MATNR
+	LEFT JOIN
+		STPO ON
+			STPO.STLNR = MAST.STLNR
+	LEFT JOIN
+		MARA COMP ON
+			COMP.MATNR = STPO.IDNRK
+	INNER JOIN
+		MVKE ON
+			MVKE.MATNR = COMP.MATNR AND
+			MVKE.VKORG = '5998' AND
+			MVKE.VTWEG = '10'
+
+        INNER JOIN
+                    MARC ON MARC.MATNR = MARA.MATNR AND
+                    MARC.WERKS LIKE 'GD%'
+
+        LEFT JOIN
+                    WLK1 DC ON DC.ARTNR = MARA.MATNR AND
+                    DC.DATBI > current_date AND
+                    DC.FILIA = MARC.WERKS                              /**--Update Region Here**/
+
+
+        LEFT JOIN
+                    WLK1 STORE ON STORE.ARTNR = MARA.MATNR AND
+                    STORE.DATBI > current_date AND
+                    MARC.WERKS = CASE WHEN STORE.FILIA like '%MIN-%' and mara.TEMPB not in ('9A','8A') THEN 'GD01'
+                                    WHEN STORE.FILIA like '%STP-%' and left(mara.matkl,4) = '0001' THEN 'GD01'
+                                    WHEN STORE.FILIA like '%MIN-%' and mara.TEMPB in ('9A','8A') THEN 'GD21'
+                                    WHEN STORE.FILIA like '%DER-%' and mara.TEMPB not in ('9A','8A') THEN 'GD02'
+                                    WHEN STORE.FILIA like '%RGY-%' and left(mara.matkl,4) = '0001' THEN 'GD02'
+                                    WHEN STORE.FILIA like '%DER-%' and mara.TEMPB in ('9A','8A') THEN 'GD22'
+                                    WHEN STORE.FILIA like '%STP-%' and left(mara.matkl,4) <> '0001' THEN 'GD03'
+                                    WHEN STORE.FILIA like '%PRE-%' and mara.TEMPB not in ('9A','8A') THEN 'GD04'
+                                    WHEN STORE.FILIA like '%PRE-%' and mara.TEMPB in ('9A','8A') THEN 'GD21'
+                                    WHEN STORE.FILIA like '%DAN-%' THEN 'GD05'
+                                    WHEN STORE.FILIA like '%BRE-%' THEN 'GD06'
+                                    WHEN STORE.FILIA like '%RGY-%' and left(mara.matkl,4) <> '0001' THEN 'GD07'
+                                    WHEN STORE.FILIA like '%JKT-%' THEN 'GD08' END                                 /**--Update Store Assortment Here**/ AND
+                store.filia not like '%000%'
+
+
+        LEFT JOIN 
+                WRSZ ON WRSZ.ASORT = STORE.FILIA AND
+                WRSZ.DATBI >= CURRENT_DATE
+
+        INNER JOIN
+                    MARC AS MARCSTORE ON MARCSTORE.MATNR = MARA.MATNR AND
+                    MARCSTORE.WERKS = WRSZ.LOCNR
+
+	LEFT JOIN
+			EKPO ON EKPO.MATNR = MARA.MATNR AND
+			EKPO.WERKS = MARC.WERKS AND
+                     EKPO.LOEKZ !='L'
+	LEFT JOIN
+			EKKO ON EKKO.EBELN = EKPO.EBELN
+
+       LEFT JOIN
+	        MAKT MAKT_EN ON
+		MAKT_EN.MATNR = MARA.MATNR AND
+		MAKT_EN.SPRAS = 'E'
+       LEFT JOIN			
+              WAKP on			
+            wakp.artnr = mara.matnr
+			
+       Left join
+               ZACDC_FREE_TASKM on
+            ZACDC_FREE_TASKM.matnr = mara.matnr
+
+       LEFT join
+               ZACDC_FREE_TASKW on
+            ZACDC_FREE_TASKW.taskid = ZACDC_FREE_TASKM.taskid
+            and ZACDC_FREE_TASKW.werks = marc.werks
+
+       Left join
+              ZACDC_FREE_TASK on
+            ZACDC_FREE_TASK.taskid = ZACDC_FREE_TASKW.taskid
+            and ZACDC_FREE_TASK.triger = 'FT002'
+
+
+	WHERE
+
+      (RIGHT(LEFT(MARA.PRDHA, 5),1) in ('1','3') OR(			
+              RIGHT(LEFT(MARA.PRDHA, 5),1) = '4' AND RIGHT(LEFT(MVKE.PRODH, 5),1) <> '2')) and			
+			
+      wakp.artnr is null AND			
+	MARA.ATTYP = 12 AND		
+	MARA.MTART = 'Z100' AND
+	ZACDC_FREE_TASKW.WERKS IS NOT NULL AND ZACDC_FREE_TASK.POSTED_ON
+      > STORE.DATAB AND
+      AUSP.OBJEK IS NOT NULL AND
+	COMP.MATNR IS NOT NULL AND
+      MARA.MTART = 'Z100' AND
+      EKKO.KDATE >= Current_date AND
+      LEFT (MARA.PRDHA, 5) <> '00002' AND LEFT (MVKE.PRODH, 5) <> '00002' AND
+           (MARCSTORE.MMSTA = '10' AND MARC.MMSTA IN ('20','21','30') 
+        OR (MARCSTORE.MMSTA IN ('20', '21', '99') AND MARC.MMSTA IN ('20', '21','30')) 
+        OR (MARCSTORE.MMSTA = '11' AND MARC.MMSTA IN ('20', '21', '30'))
+        OR (MARCSTORE.MMSTA = '30' AND MARC.MMSTA IN ('20', '21', '30')))
+
+     ORDER BY Review, DisplayID
