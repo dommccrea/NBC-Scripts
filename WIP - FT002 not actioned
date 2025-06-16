@@ -1,0 +1,147 @@
+SELECT DISTINCT
+  mvke.ZZPRGRP || ' - ' || T.EKNAM             AS BUYING_DIRECTOR,
+  RIGHT(MARA.MATNR,6)                            AS Display_ID,
+  MAKT_EN.MAKTX                                  AS DESCRIPTION_EN,
+  CASE 
+    WHEN RIGHT(LEFT(MVKE.PRODH,5),1) = '1' THEN 'Core Range'
+    WHEN RIGHT(LEFT(MVKE.PRODH,5),1) = '3' THEN 'Seasonal'
+    ELSE ''
+  END                                            AS PRODUCT_HIERARCHY,
+  MARC.WERKS                                     AS DC,
+  MARC.MMSTA                                     AS DC_STATUS,
+
+  -- flags
+  CASE WHEN MARC.MMSTA <> '30' THEN 'Yes' ELSE 'No' END   AS DC_not_30,
+  CASE WHEN DC.ARTNR    IS NOT NULL THEN 'Yes' ELSE 'No' END   AS DC_listing_active,
+  CASE WHEN STORE.ARTNR IS NOT NULL THEN 'Yes' ELSE 'No' END   AS STORE_listing_active,
+  CASE WHEN X.EBELN      IS NOT NULL THEN 'Yes' ELSE 'No' END   AS Contract_active,
+  CASE WHEN zft.TASKID   IS NOT NULL THEN 'Yes' ELSE 'No' END   AS FT002_received,
+
+  -- contract dates (including future starts)
+  X.KDATB                                        AS Contract_Start,
+  X.KDATE                                        AS Contract_End,
+
+  -- FT002 posted date
+  zft.POSTED_ON                                  AS FT002_Posted_On
+
+FROM MARA
+
+  LEFT JOIN WRF_MATGRP_MD4T AS WRF
+    ON WRF.NODE = MARA.MATKL
+   AND WRF.SPRAS = 'E'
+
+  INNER JOIN MVKE
+    ON MVKE.MATNR = MARA.MATNR
+   AND MVKE.VKORG = '5998'
+   AND MVKE.VTWEG = '10'
+
+  INNER JOIN MARC
+    ON MARC.MATNR = MARA.MATNR
+   AND (
+        MARC.WERKS IN ('GD01','GD02','GD04','GD05','GD06','GD08','GD21','GD22','GD24')
+     OR (MARC.WERKS IN ('GD03','GD07') AND MVKE.ZZPRGRP NOT IN ('G08','G09'))
+   )
+
+  LEFT JOIN WLK1 DC
+    ON DC.ARTNR = MARA.MATNR
+   AND DC.DATBI >= ADD_DAYS(CURRENT_DATE,2)
+   AND DC.FILIA = MARC.WERKS
+
+  LEFT JOIN WLK1 STORE
+    ON STORE.ARTNR = MARA.MATNR
+   AND STORE.DATBI > ADD_DAYS(CURRENT_DATE,2)
+   AND MARC.WERKS = CASE 
+       WHEN STORE.FILIA LIKE '%MIN-%' AND (MARA.TEMPB IN ('9A','8A')) THEN 'GD21'
+       WHEN STORE.FILIA LIKE '%MIN-%' THEN 'GD01'
+       WHEN STORE.FILIA LIKE '%DER-%' AND (MARA.TEMPB IN ('9A','8A')) THEN 'GD22'
+       WHEN STORE.FILIA LIKE '%DER-%' THEN 'GD02'
+       WHEN STORE.FILIA LIKE '%STP-%' THEN 'GD03'
+       WHEN STORE.FILIA LIKE '%PRE-%' AND (MARA.TEMPB IN ('9A','8A')) THEN 'GD21'
+       WHEN STORE.FILIA LIKE '%PRE-%' THEN 'GD04'
+       WHEN STORE.FILIA LIKE '%DAN-%' AND (MARA.TEMPB IN ('9A','8A')) THEN 'GD22'
+       WHEN STORE.FILIA LIKE '%DAN-%' THEN 'GD05'
+       WHEN STORE.FILIA LIKE '%BRE-%' THEN 'GD06'
+       WHEN STORE.FILIA LIKE '%RGY-%' THEN 'GD07'
+       WHEN STORE.FILIA LIKE '%JKT-%' THEN 'GD08'
+     END
+   AND STORE.FILIA NOT LIKE '%DUMY%'
+   AND STORE.FILIA NOT LIKE '%000%'
+
+  LEFT JOIN (
+    SELECT DISTINCT
+      EKPO.MATNR,
+      EKPO.WERKS,
+      EKPO.EBELN,
+      EKKO.KDATB,
+      EKKO.KDATE
+    FROM EKPO
+      INNER JOIN EKKO
+        ON EKKO.EBELN = EKPO.EBELN
+       AND EKKO.BSTYP = 'K'
+       AND EKKO.KDATE >= CURRENT_DATE
+    WHERE EKPO.LOEKZ <> 'L'
+  ) X
+    ON X.MATNR = MARA.MATNR
+   AND X.WERKS = MARC.WERKS
+
+  LEFT JOIN MAKT MAKT_EN
+    ON MAKT_EN.MATNR = MARA.MATNR
+   AND MAKT_EN.SPRAS = 'E'
+
+  LEFT JOIN T024 T
+    ON T.EKGRP = MVKE.ZZPRGRP
+
+  LEFT JOIN ZACDC_FREE_TASKM fm
+    ON fm.MATNR = MARA.MATNR
+  LEFT JOIN ZACDC_FREE_TASKW fw
+    ON fw.TASKID = fm.TASKID
+   AND fw.WERKS = MARC.WERKS
+  LEFT JOIN ZACDC_FREE_TASK zft
+    ON zft.TASKID = fw.TASKID
+   AND zft.TRIGER = 'FT002'
+
+WHERE
+  MARA.ATTYP = '12'
+  AND MARA.MTART = 'Z100'
+  AND (
+    (
+      RIGHT(LEFT(MVKE.PRODH,5),1) = '1'
+      AND zft.TASKID IS NOT NULL
+      AND (
+           MARC.MMSTA <> '30'
+        OR DC.ARTNR IS NOT NULL
+        OR STORE.ARTNR IS NOT NULL
+        OR X.EBELN IS NOT NULL
+      )
+    )
+    OR (
+      RIGHT(LEFT(MVKE.PRODH,5),1) = '3'
+      AND zft.TASKID IS NOT NULL
+      AND (
+           MARC.MMSTA NOT IN ('21','30')
+        OR DC.ARTNR IS NOT NULL
+        OR STORE.ARTNR IS NOT NULL
+        OR X.EBELN IS NOT NULL
+      )
+    )
+  )
+  -- Exclude fully valid core listings
+  AND NOT (
+    RIGHT(LEFT(MVKE.PRODH,5),1) = '1'
+    AND MARC.MMSTA = '10'
+    AND DC.ARTNR IS NOT NULL
+    AND STORE.ARTNR IS NOT NULL
+    AND X.EBELN IS NOT NULL
+  )
+  -- Ignore FT002s received in the last 7 days
+  AND (zft.POSTED_ON IS NULL OR zft.POSTED_ON < ADD_DAYS(CURRENT_DATE,-7))
+  -- Exclude where DC=00 and contract not yet open and DC listing not open
+  AND NOT (
+    MARC.MMSTA = '00'
+    AND DC.ARTNR IS NULL
+    AND (X.KDATB > CURRENT_DATE OR X.KDATB IS NULL)
+  )
+
+ORDER BY
+  Display_ID,
+  MARC.WERKS;
