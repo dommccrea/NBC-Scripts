@@ -3,41 +3,44 @@ SELECT
     curr.[Price_Type],
     curr.[Article],
     ISNULL(curr.[Display_Article], al.[Display_Article]) AS Display_Article,
-    al.[Plant_Category],
-    al.[Sales_Office]    AS Listing_Sales_Office,
-    al.[Listing_Date_From],
-    al.[Listing_Date_To],
+    al.[Plant_Category],                       -- added column
+    al.[Sales_Office] AS Listing_Sales_Office, -- added column from ArticleListing table
+    al.[Listing_Date_From],                     -- added column from ArticleListing table
+    al.[Listing_Date_To],                       -- added column from ArticleListing table
     curr.[Base_Unit],
-    curr.[ValidFrom]     AS New_ValidFrom,
-    curr.[ValidTo]       AS New_ValidTo,
-    curr.[Gross_Price]   AS New_Gross_Price,
-    curr.[Net_Price]     AS New_Net_Price,
-    prev.[ValidFrom]     AS Prev_ValidFrom,
-    prev.[ValidTo]       AS Prev_ValidTo,
-    prev.[Gross_Price]   AS Prev_Gross_Price,
-    prev.[Net_Price]     AS Prev_Net_Price
+    curr.[ValidFrom] AS New_ValidFrom,
+    curr.[ValidTo]   AS New_ValidTo,
+    curr.[Gross_Price] AS New_Gross_Price,
+    curr.[Net_Price]   AS New_Net_Price,
+
+    prev.[ValidFrom] AS Prev_ValidFrom,
+    prev.[ValidTo]   AS Prev_ValidTo,
+    prev.[Gross_Price] AS Prev_Gross_Price,
+    prev.[Net_Price]   AS Prev_Net_Price
+
 FROM [BIRD_IDS_DDS].[dds].[INT_OBJ_RetailPrice] curr
+
+-- get the most recent previous Corporate price
 CROSS APPLY (
     SELECT TOP 1 *
-    FROM [BIRD_IDS_DDS].[dds].[INT_OBJ_RetailPrice] AS prev
-    WHERE prev.Article       = curr.Article
-      AND prev.Sales_Office  = curr.Sales_Office
-      AND prev.Price_Type    = 'Corporate'
-      AND prev.ValidFrom    < curr.ValidFrom
+    FROM [BIRD_IDS_DDS].[dds].[INT_OBJ_RetailPrice] prev
+    WHERE prev.Article     = curr.Article
+      AND prev.Sales_Office = curr.Sales_Office
+      AND prev.Price_Type   = 'Corporate'
+      AND prev.ValidFrom   < curr.ValidFrom
     ORDER BY prev.ValidFrom DESC
 ) prev
+
+-- bring in the ArticleListing row
 LEFT JOIN [BIRD_IDS_DDS].[dds].[INT_OBJ_ArticleListing] al
-    ON al.Article        = curr.Article
-   AND al.Plant_Category = 'A'
+    ON al.Article = curr.Article
+    AND al.Plant_Category = 'A'  -- Filter for Plant_Category 'A'
+
 WHERE 
-    curr.Price_Type     = 'Corporate'
-    AND curr.ValidFrom  >= CAST(GETDATE() AS DATE)
-    AND curr.ValidFrom  <  DATEADD(DAY, 7, CAST(GETDATE() AS DATE))
-    AND curr.Gross_Price < prev.Gross_Price
+    curr.Price_Type    = 'Corporate'
+    AND curr.ValidFrom >= CAST(GETDATE() AS DATE)
+    AND curr.ValidFrom <  DATEADD(DAY, 7, CAST(GETDATE() AS DATE))
+    AND curr.Gross_Price  < prev.Gross_Price
 
-    -- only include listings whose Listing_Date_From is 28+ days ago
-    AND al.Listing_Date_From <= DATEADD(DAY, -28, CAST(GETDATE() AS DATE))
+ORDER BY curr.Article, curr.ValidFrom;
 
-ORDER BY 
-    curr.Article,
-    curr.ValidFrom;
