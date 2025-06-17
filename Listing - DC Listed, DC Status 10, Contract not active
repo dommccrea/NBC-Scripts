@@ -1,3 +1,5 @@
+--- Script looks as Articles DC listed with a status 10 DC though the contract has not opened / starts in the future. DC and contract dates do not match
+
 SELECT DISTINCT
     MVKE.ZZPRGRP || ' - ' || T.EKNAM             AS BUYING_DIRECTOR,
     RIGHT(MARA.MATNR, 6)                         AS Display_ID,
