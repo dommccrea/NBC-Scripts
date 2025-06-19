@@ -1,52 +1,60 @@
-select distinct
-right(mard.matnr,6) Article
-,makt.maktx Description
-,mard.werks DC
-,marc.mmsta DC_Status
-,mard.labst DC_Stock
-,sum(po.menge) On_Order_Stock
-,case when (mard.labst + sum(po.menge)) is null then mard.labst else (mard.labst + sum(po.menge)) end Total_Stock
-,wlk1.datab ListingValidFrom
-,wlk1.datbi ListingValidTo
-
-
-from NSDM_V_MARD MARD
-
-left join zp2p_po_data PO on
-    mard.matnr = PO.matnr and
-    mard.werks = po.werks and
-    po.LOEKZ <> 'L' and
-    po.elikz <> 'X' and
-    po.ekorg = '5998'
-
-
-left join marc on
-    mard.matnr = marc.matnr and
-    mard.werks = marc.werks
-
-left join wlk1 on
-    wlk1.artnr = marc.matnr and
-    wlk1.filia = marc.werks and
-    wlk1.datbi > add_Days(current_date,-60)
-
-    left join MAKT
-    on MAKT.MATNR = MARD.MATNR
-    and MAKT.SPRAS = 'E'
-
-where
-mard.werks in ('GD07','GD06') AND
-mard.lgort = '0001' and
-mard.labst > 0 and
-marc.mmsta in ('30')
-
-Group by
-right(mard.matnr,6)
-,mard.werks
-,mard.labst
-,marc.mmsta
-,wlk1.datab
-,wlk1.datbi
-,makt.maktx
-
-order by
-Article, DC
+SELECT
+    mard.matnr           AS Article,
+    makt.maktx                    AS Description,
+    mard.werks                    AS DC,
+    marc.mmsta                    AS DC_Status,
+    mard.labst                    AS DC_Stock,
+    SUM(po.menge)                 AS On_Order_Stock,
+    CASE 
+      WHEN (mard.labst + SUM(po.menge)) IS NULL 
+        THEN mard.labst 
+      ELSE (mard.labst + SUM(po.menge)) 
+    END                           AS Total_Stock,
+    wlk1.datab                    AS ListingValidFrom,
+    wlk1.datbi                    AS ListingValidTo,
+    mara.attyp                    AS ATTYP_Code,
+    CASE mara.attyp
+      WHEN '00' THEN 'Single'
+      WHEN '01' THEN 'Generic'
+      WHEN '02' THEN 'Variant'
+      WHEN '12' THEN 'Display'
+      ELSE mara.attyp
+    END                           AS ATTYP_Desc
+FROM NSDM_V_MARD MARD
+LEFT JOIN zp2p_po_data PO
+  ON mard.matnr = po.matnr
+ AND mard.werks  = po.werks
+ AND po.LOEKZ   <> 'L'
+ AND po.elikz   <> 'X'
+ AND po.ekorg   = '5998'
+LEFT JOIN marc
+  ON mard.matnr = marc.matnr
+ AND mard.werks  = marc.werks
+LEFT JOIN wlk1
+  ON wlk1.artnr = marc.matnr
+ AND wlk1.filia  = marc.werks
+ AND wlk1.datbi > ADD_DAYS(CURRENT_DATE, -60)
+LEFT JOIN MAKT
+  ON makt.matnr = mard.matnr
+ AND makt.spras = 'E'
+LEFT JOIN mara
+  ON mara.matnr = mard.matnr
+WHERE
+    mard.werks  IN (
+      'GD01','GD02','GD03','GD04','GD05',
+      'GD06','GD07','GD08','GD21','GD22'
+    )
+  AND mard.labst > 0
+  AND marc.mmsta IN ('00','30','99')
+GROUP BY
+    mard.matnr,
+    makt.maktx,
+    mard.werks,
+    marc.mmsta,
+    mard.labst,
+    wlk1.datab,
+    wlk1.datbi,
+    mara.attyp
+ORDER BY
+    Article,
+    DC;
