@@ -44,6 +44,7 @@ WHERE
       'GD01','GD02','GD03','GD04','GD05',
       'GD06','GD07','GD08','GD21','GD22'
     )
+    AND mard.lgort = '0001'
   AND mard.labst > 0
   AND marc.mmsta IN ('00','30','99')
 GROUP BY
