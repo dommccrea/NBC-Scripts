@@ -1,5 +1,4 @@
 SELECT 
-      [Source_Type],
       [Article],
       [Medium_Description],
       [Generic_Article],
