@@ -1,0 +1,23 @@
+SELECT 
+      [Source_Type],
+      [Article],
+      [Medium_Description],
+      [Generic_Article],
+      [Linked_Main_Article],
+      [Product_Hierarchy],
+      [Purch_Grp_Buyer]
+FROM [BIRD_IDS_DDS].[dds].[INT_OBJ_MD_Product]
+WHERE [Product_Hierarchy] IN (
+      '00003',
+      '0000300001',
+      '000030000100001',
+      '000030000100002',
+      '0000300002',
+      '000030000200001',
+      '000030000200002',
+      '0000300003',
+      '000030000300001',
+      '0000300004',
+      '000030000400001',
+      '0000300005'
+)
