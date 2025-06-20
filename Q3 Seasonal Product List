@@ -1,7 +1,7 @@
 SELECT 
-      [Article],
-      [Medium_Description],
       [Generic_Article],
+	[Article],
+      [Medium_Description],
       [Linked_Main_Article],
       [Product_Hierarchy],
       [Purch_Grp_Buyer]
