@@ -1,154 +1,249 @@
-SELECT DISTINCT
-		RIGHT (MARA.MATNR, 6) AS DisplayID,
-            MAKT_EN.MAKTX AS DESCRIPTION_EN,
-CASE WHEN RIGHT(LEFT(MVKE.PRODH, 5), 1) = '1' THEN 'Core Range'			
-     WHEN RIGHT(LEFT(MVKE.PRODH, 5), 1) = '3' THEN 'Seasonal'			
-     ELSE ''			
-END AS PRODUCT_HIERARCHY,
-            right(mara.MATKL,2)|| ' - '|| WRF_MATGRP_MD4T.LTEXT AS ASCG,
-            MARC.WERKS AS DC,
-            DC.FILIA AS DC_LISTING,
-            MARC.MMSTA AS DC_STATUS,
-            TO_VARCHAR(TO_DATE(DC.DATAB, 'YYYYMMDD'), 'DD/MM/YYYY') AS DC_VALID_FROM,
-            TO_VARCHAR(TO_DATE(DC.DATBI, 'YYYYMMDD'), 'DD/MM/YYYY') AS DC_VALID_TILL,
-            STORE.FILIA AS STORE_LISTING,
-            MARCSTORE.MMSTA AS STORE_STATUS,
-            TO_VARCHAR(TO_DATE(STORE.DATAB, 'YYYYMMDD'), 'DD/MM/YYYY') AS STORE_VALID_FROM,
-            TO_VARCHAR(TO_DATE(STORE.DATBI, 'YYYYMMDD'), 'DD/MM/YYYY') AS STORE_VALID_TILL,
-            TO_VARCHAR(TO_DATE(ZACDC_FREE_TASK.POSTED_ON, 'YYYYMMDD'), 'DD/MM/YYYY') AS Zero_SOH_Bulletin_Posted,
-            Case when (select count(*) from EKPO
-                 LEFT JOIN EKKO on EKKO.EBELN = EKPO.EBELN
-                 where Mara.MATNR = EKPO.MATNR
-                 and EKPO.WERKS = MARC.WERKS
-                 and EKPO.LOEKZ <> 'L'
-                 and EKKO.KDATB <= current_date and EKKO.KDATE >= current_date) > 0 then 'x' else '' end DC_Outline_Agreement,
-            CASE WHEN MARCSTORE.MMSTA = '10' AND MARC.MMSTA IN ('20', '21','30') AND (DC.DATBI >= CURRENT_DATE OR STORE.DATBI >= CURRENT_DATE) THEN '1. ARTICLE SHOULD BE DELISTED - STORE STATUS 10'
-                 WHEN MARCSTORE.MMSTA IN ('20', '21','99') AND MARC.MMSTA IN ('20', '21', '30') AND (DC.DATBI >= CURRENT_DATE OR STORE.DATBI >= CURRENT_DATE) THEN '2. ARTICLE SHOULD BE DELISTED - INVALID STORE STATUS 20, 21 and 99 USED'
-                 WHEN MARCSTORE.MMSTA = '11' AND MARC.MMSTA IN ('20', '21', '30') AND (DC.DATBI >= CURRENT_DATE OR STORE.DATBI >= CURRENT_DATE) THEN '3. ARTICLE SHOULD BE DELISTED - STORE STATUS 11'
-                 WHEN MARCSTORE.MMSTA = '30' AND MARC.MMSTA IN ('20', '21', '30') AND (DC.DATBI >= CURRENT_DATE OR STORE.DATBI >= CURRENT_DATE) THEN '4. ARTICLE SHOULD BE DELISTED - REVIEW IF ALL STORES UPDATED TO 30' ELSE '' END AS REVIEW
-	FROM
-		MARA
+WITH LEADTABLE (BUYING_DIRECTOR,Display_ID,DESCRIPTION_EN, DC, DC_STATUS, DC_LISTING, STORE_LISTING, Sub_Bulletin_Posted, LEAD_TIME, CG, ASCG, MIN_LEADTIME, Contract_Valid_from
+, Contract_Valid_to
+,CONTRACT_NUMBER
+,Shelf_Life
+, Container
+,IPRKZ) AS
 
-      LEFT JOIN
-            WRF_MATGRP_MD4T ON
-                  WRF_MATGRP_MD4T.NODE = MARA.MATKL AND
-                  WRF_MATGRP_MD4T.SPRAS = 'E'
+(SELECT DISTINCT
+	mvke.ZZPRGRP||' - '||T.EKNAM AS BUYING_DIRECTOR,
+       RIGHT (MARA.MATNR, 6) AS Display_ID,
+      	MAKT_EN.MAKTX AS DESCRIPTION_EN,
+	MARC.WERKS AS DC, MARC.MMSTA AS DC_STATUS,
+	DC.DATAB AS DC_LISTING,
+	STORE.DATAB AS STORE_LISTING,
+    ZACDC_FREE_TASK.POSTED_ON AS Sub_Bulletin_Posted,
+       WORKDAYS_BETWEEN ('GV', DC.DATAB, STORE.DATAB )AS LEAD_TIME,
+	/**CASE WHEN X.EBELN IS NOT NULL THEN 'x' ELSE '' END AS Active_Contract,**/
+        CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),'-'),CG.LTEXT) AS CG,
+       right(mara.MATKL,2)|| ' - '|| WRF_MATGRP_MD4T.LTEXT AS ASCG,
+       CASE WHEN EKPO.mhdrz < 19 AND EKPO.IPRKZ <> '2' AND EKPO.mhdrz <> 0 THEN 2
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '01 - Spirits' THEN 10
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '02 - Sparkling wine' THEN 10
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '03 - Wine' THEN 10
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '04 - Beer' THEN 10
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '05 - Water' THEN 10
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '06 - Detergents & Cleaners' THEN 10
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '07 - Health & Beauty'  THEN 10
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '08 - Personal Care'  THEN 10
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '09 - Baby Products'  THEN 10
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '10 - Paper Products'   THEN 10
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '11 - Wraps & Cloths'   THEN 10
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '12 - Audio, Video & Batteries'   THEN 12
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '13 - Pharmacy'  THEN 12
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '27 - Plants & Flowers'  THEN 2
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '28 - Stationery, Office Needs & Gift Wrap' THEN 10
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '29 - Decorations'  THEN 9
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '39 - Pet Care'  THEN 12
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '40 - Confectionary'  THEN 12
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '41 - Chocolates'   THEN 12
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '42 - Biscuits'  THEN 12
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '43 - Seasonal Confectionary'  THEN 12
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '44 - Savoury Crackers'  THEN 12
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '45 - Coffee & Cocoa'THEN 12
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '46 - Tea' THEN 12
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '47 - Canned Food'  THEN 12
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '48 - Convenience Food & Soups' THEN 12
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '49 - Long Life Meats'  THEN 5
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '50 - Long Life Dairy & Alternatives' THEN 6
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '51 - Yogurts & Quark'  THEN 4
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '52 - Dressings, Oils & Sauces'  THEN 12
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '53 - Preserves & Spreads'  THEN 12
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '54 - Processed Foods' THEN 12
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '55 - Eggs' THEN 2
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '57 - Bakery & Cakes'  THEN 5
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '58 - Fruits' THEN 2
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '60 - Margarine & Plant based Fats'  THEN 6
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '62 - Fresh Meat (without Pork & Poultry)' THEN 2
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '64 - Fresh Fish'  THEN 2
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '67 - Fresh Poultry' THEN 2
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '68 - Fresh Pork' THEN 2
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '69 - Chilled Processed Meat' THEN 4
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '70 - Chilled Meat Convenience & Meat Substitu' THEN 4
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '72 - Chilled Prepared Food' THEN 4
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '73 - Chilled Accompaniments' THEN 5
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '74 - Chilled Drinks' THEN 5
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '75 - Frozen Meat & Fish'  THEN 7
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '76 - Frozen Fruits & Vegetables' THEN 7
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '77 - Ice Cream & Desserts' THEN 7
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '78 - Frozen Ready Meals & Pizza'  THEN 7
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '79 - Functional Drinks & Ice Tea' THEN 12
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '80 - Carbonates' THEN 12
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '81 - Juices & Dilutes' THEN 12
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '82 - Canned Meats & Fish'  THEN 12
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '83 - Milk, Cream & Butter'  THEN 4
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '84 - Cheese & Cheese Alternatives'  THEN 5
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '85 - Pet Food' THEN 12
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '86 - Chips & Snacks' THEN 10
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '87 - Nuts & Dried Fruits' THEN 10
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '88 - Salads' THEN 2
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '89 - Bakery Items' THEN 4
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '90 - Cereals & Snacks' THEN 10
+WHEN CONCAT(CONCAT(RIGHT(LEFT(MARA.MATKL,6),2),' - '),CG.LTEXT) = '93 - ALDI Services'  THEN 5
+ELSE 0 END AS MIN_LEADTIME
+,ekko.kdatb Contract_Valid_from
+,ekko.kdate Contract_Valid_to
+,ekko.ebeln
+,EKPO.mhdrz Shelf_Life
+,case when marc.dispo in ('GAF','GAG','GAH','GAI','GAJ') then 'x' else '' end  Container
+,EKPO.IPRKZ AS IPRKZ
 
-	INNER JOIN
-		INOB ON
-			INOB.OBJEK = MARA.MATNR AND
-			INOB.OBTAB = 'MARAT' AND
-			INOB.KLART = '026'
-
-     INNER JOIN
-	      WRF_MATGRP_MD2T CG ON
-		     CG.SPRAS = 'E' AND
-		     CG.NODE = LEFT(MARA.MATKL, 4)
-
-	INNER JOIN
-		AUSP ON
-			INOB.CUOBJ = AUSP.OBJEK AND
-			AUSP.ATINN IN ('0000009663', '0000007846')
-	LEFT JOIN
-		MAST ON
-			MAST.MATNR = MARA.MATNR
-	LEFT JOIN
-		STPO ON
-			STPO.STLNR = MAST.STLNR
-	LEFT JOIN
-		MARA COMP ON
-			COMP.MATNR = STPO.IDNRK
-	INNER JOIN
-		MVKE ON
-			MVKE.MATNR = COMP.MATNR AND
-			MVKE.VKORG = '5998' AND
-			MVKE.VTWEG = '10'
-
-        INNER JOIN
-                    MARC ON MARC.MATNR = MARA.MATNR AND
-                    MARC.WERKS LIKE 'GD%'
-
-        LEFT JOIN
-                    WLK1 DC ON DC.ARTNR = MARA.MATNR AND
-                    DC.DATBI > current_date AND
-                    DC.FILIA = MARC.WERKS                              /**--Update Region Here**/
+FROM
+	MARA
 
 
-        LEFT JOIN
-                    WLK1 STORE ON STORE.ARTNR = MARA.MATNR AND
-                    STORE.DATBI > current_date AND
-                    MARC.WERKS = CASE WHEN STORE.FILIA like '%MIN-%' and mara.TEMPB not in ('9A','8A') THEN 'GD01'
-                                    WHEN STORE.FILIA like '%STP-%' and left(mara.matkl,4) = '0001' THEN 'GD01'
-                                    WHEN STORE.FILIA like '%MIN-%' and mara.TEMPB in ('9A','8A') THEN 'GD21'
-                                    WHEN STORE.FILIA like '%DER-%' and mara.TEMPB not in ('9A','8A') THEN 'GD02'
-                                    WHEN STORE.FILIA like '%RGY-%' and left(mara.matkl,4) = '0001' THEN 'GD02'
-                                    WHEN STORE.FILIA like '%DER-%' and mara.TEMPB in ('9A','8A') THEN 'GD22'
-                                    WHEN STORE.FILIA like '%STP-%' and left(mara.matkl,4) <> '0001' THEN 'GD03'
-                                    WHEN STORE.FILIA like '%PRE-%' and mara.TEMPB not in ('9A','8A') THEN 'GD04'
-                                    WHEN STORE.FILIA like '%PRE-%' and mara.TEMPB in ('9A','8A') THEN 'GD21'
-                                    WHEN STORE.FILIA like '%DAN-%' THEN 'GD05'
-                                    WHEN STORE.FILIA like '%BRE-%' THEN 'GD06'
-                                    WHEN STORE.FILIA like '%RGY-%' and left(mara.matkl,4) <> '0001' THEN 'GD07'
-                                    WHEN STORE.FILIA like '%JKT-%' THEN 'GD08' END                                 /**--Update Store Assortment Here**/ AND
-                store.filia not like '%000%'
+LEFT JOIN
+      WRF_MATGRP_MD4T ON
+            WRF_MATGRP_MD4T.NODE = MARA.MATKL AND
+            WRF_MATGRP_MD4T.SPRAS = 'E'
+
+INNER JOIN
+	INOB ON
+		INOB.OBJEK = MARA.MATNR AND
+		INOB.OBTAB = 'MARAT' AND
+		INOB.KLART = '026'
+
+INNER JOIN
+	WRF_MATGRP_MD3T CG ON
+		CG.SPRAS = 'E' AND
+		CG.NODE = LEFT(MARA.MATKL, 6)
+
+INNER JOIN
+	AUSP ON
+		INOB.CUOBJ = AUSP.OBJEK AND
+		AUSP.ATINN IN ('0000009663', '0000007846')
+
+INNER JOIN
+	MVKE ON
+		MVKE.MATNR = MARA.MATNR AND
+		MVKE.VKORG = '5998' AND
+		MVKE.VTWEG = '10' AND
+              (RIGHT(LEFT(MARA.PRDHA, 5),1) in ('1','3') OR(
+              RIGHT(LEFT(MARA.PRDHA, 5),1) = '4' AND RIGHT(LEFT(MVKE.PRODH, 5),1) <> '2'))
+
+INNER JOIN
+	MARC ON
+		MARC.MATNR = MARA.MATNR AND
+		(MARC.WERKS IN ('GD01', 'GD02', 'GD04', 'GD05', 'GD06', 'GD08') OR
+		(MARC.WERKS IN ('GD03', 'GD07') AND MVKE.ZZPRGRP NOT IN ('G08', 'G09')))
+
+left join ekpo
+    on ekpo.matnr = mara.matnr
+    and ekpo.LOEKZ !='L'
+    and ekpo.werks = marc.werks
+
+left join ekko
+    on ekpo.ebeln = ekko.ebeln
 
 
-        LEFT JOIN 
-                WRSZ ON WRSZ.ASORT = STORE.FILIA AND
-                WRSZ.DATBI >= CURRENT_DATE
+LEFT JOIN
+	WLK1 DC ON
+		DC.ARTNR = MARA.MATNR AND
+		DC.DATBI >= current_date AND
+		DC.FILIA = MARC.WERKS                              /**--Update Region Here**/
 
-        INNER JOIN
-                    MARC AS MARCSTORE ON MARCSTORE.MATNR = MARA.MATNR AND
-                    MARCSTORE.WERKS = WRSZ.LOCNR
 
-	LEFT JOIN
-			EKPO ON EKPO.MATNR = MARA.MATNR AND
-			EKPO.WERKS = MARC.WERKS AND
-                     EKPO.LOEKZ !='L'
-	LEFT JOIN
-			EKKO ON EKKO.EBELN = EKPO.EBELN
+LEFT JOIN
+	WLK1 STORE ON
+		STORE.ARTNR = MARA.MATNR AND
+		STORE.DATBI >= current_date AND
+		MARC.WERKS = CASE WHEN STORE.FILIA like '%MIN-%' THEN 'GD01'
+			WHEN STORE.FILIA like '%DER-%' THEN 'GD02'
+                        WHEN STORE.FILIA like '%STP-%' THEN 'GD03'
+                        WHEN STORE.FILIA like '%PRE-%' THEN 'GD04'
+                        WHEN STORE.FILIA like '%DAN-%' THEN 'GD05'
+                        WHEN STORE.FILIA like '%BRE-%' THEN 'GD06'
+                        WHEN STORE.FILIA like '%RGY-%' THEN 'GD07'
+                        WHEN STORE.FILIA like '%JKT-%' THEN 'GD08' END AND STORE.FILIA NOT LIKE '%DUMY%'
+AND STORE.FILIA NOT LIKE '%-SE1-%'
+AND STORE.FILIA NOT LIKE '%-SX1-%'
 
-       LEFT JOIN
-	        MAKT MAKT_EN ON
+                   			
+	
+LEFT JOIN
+	(SELECT DISTINCT
+		EKPO.MATNR, EKPO.WERKS, EKPO.EBELN, EKKO.KDATB,EKKO.KDATE,EKPO.LOEKZ
+               FROM EKPO
+               INNER JOIN EKKO ON EKKO.EBELN = EKPO.EBELN AND EKKO.BSTYP = 'K' AND (EKKO.KDATB <= CURRENT_DATE AND EKKO.KDATE >= CURRENT_DATE)) X
+	ON X.MATNR = MARA.MATNR AND X.WERKS = MARC.WERKS AND X.LOEKZ !='L'
+
+
+LEFT JOIN
+	MAKT MAKT_EN ON
 		MAKT_EN.MATNR = MARA.MATNR AND
 		MAKT_EN.SPRAS = 'E'
-       LEFT JOIN			
-              WAKP on			
-            wakp.artnr = mara.matnr
-			
-       Left join
-               ZACDC_FREE_TASKM on
-            ZACDC_FREE_TASKM.matnr = mara.matnr
 
-       LEFT join
-               ZACDC_FREE_TASKW on
-            ZACDC_FREE_TASKW.taskid = ZACDC_FREE_TASKM.taskid
-            and ZACDC_FREE_TASKW.werks = marc.werks
+LEFT JOIN
+	T024 T ON
+		T.EKGRP = MVKE.ZZPRGRP
 
-       Left join
-              ZACDC_FREE_TASK on
-            ZACDC_FREE_TASK.taskid = ZACDC_FREE_TASKW.taskid
-            and ZACDC_FREE_TASK.triger = 'FT002'
+Left join
+    ZACDC_FREE_TASKM on
+    ZACDC_FREE_TASKM.matnr = marc.matnr
 
+LEFT join
+    ZACDC_FREE_TASKW on
+    ZACDC_FREE_TASKW.taskid = ZACDC_FREE_TASKM.taskid
+    and ZACDC_Free_TASKW.werks like 'GD%'
 
-	WHERE
-
-      (RIGHT(LEFT(MARA.PRDHA, 5),1) in ('1','3') OR(			
-              RIGHT(LEFT(MARA.PRDHA, 5),1) = '4' AND RIGHT(LEFT(MVKE.PRODH, 5),1) <> '2')) and			
-			
-      wakp.artnr is null AND			
-	MARA.ATTYP = 12 AND		
+Left join
+    ZACDC_FREE_TASK on
+    ZACDC_FREE_TASK.taskid = ZACDC_FREE_TASKW.taskid
+	
+WHERE
+	AUSP.OBJEK IS NOT NULL AND
+	MARA.ATTYP = 12 AND
 	MARA.MTART = 'Z100' AND
-	ZACDC_FREE_TASKW.WERKS IS NOT NULL AND ZACDC_FREE_TASK.POSTED_ON
-      > STORE.DATAB AND
-      AUSP.OBJEK IS NOT NULL AND
-	COMP.MATNR IS NOT NULL AND
-      MARA.MTART = 'Z100' AND
-      EKKO.KDATE >= Current_date AND
-      LEFT (MARA.PRDHA, 5) <> '00002' AND LEFT (MVKE.PRODH, 5) <> '00002' AND
-           (MARCSTORE.MMSTA = '10' AND MARC.MMSTA IN ('20','21','30') 
-        OR (MARCSTORE.MMSTA IN ('20', '21', '99') AND MARC.MMSTA IN ('20', '21','30')) 
-        OR (MARCSTORE.MMSTA = '11' AND MARC.MMSTA IN ('20', '21', '30'))
-        OR (MARCSTORE.MMSTA = '30' AND MARC.MMSTA IN ('20', '21', '30')))
+	(DC.DATAB > CURRENT_DATE AND STORE.DATAB > CURRENT_DATE) AND
+        ekko.kdate >= current_date AND
+       mvke.zzprgrp <> 'G36' and
+        (ZACDC_FREE_TASK.triger = 'FT024' or ZACDC_FREE_TASK.triger is null)
 
-     ORDER BY Review, DisplayID
+AND MARA.MATKL NOT IN (
+    '00048303', '00048301', '00048302',
+    '00066705', '00066704', '00066703', '00066702', '00066701',
+    '00066805', '00066804', '00066803', '00066802', '00066801',
+    '00056905', '00066201','00066202','00066203','00066204','00066205','00066401','00066402'
+)
+
+ORDER BY
+	Display_ID ASC, contract_valid_from ASC)
+
+SELECT distinct
+BUYING_DIRECTOR,
+
+Case when ((DC = 'GD08' and store_listing not in ('20241204','20250122','20250226','20250326','20250430','20250528','20250625','20250723','20250827','20250924','20251022','20251126')) OR (DC <> 'GD08' and store_listing not in ('20241127','20250122','20250226','20250326','20250430','20250528','20250625','20250723','20250827','20250924','20251022','20251126'))) and Sub_Bulletin_Posted is Null then 'Store Listing Missing OSD and no FT024 Bulletin Sent | '
+when ((CASE WHEN CONTAINER = 'x' THEN MIN_LEADTIME + 10 ELSE MIN_LEADTIME END) > LEAD_Time and DC_Listing <= Store_Listing and Sub_Bulletin_Posted is null) then 'DC Lead Time Too Short | '
+when ((CASE WHEN CONTAINER = 'x' THEN MIN_LEADTIME + 10 ELSE MIN_LEADTIME END) < LEAD_Time) and (Container <> 'x' and Lead_Time - Min_Leadtime <> 10) and Min_Leadtime <> 2 then 'DC Lead Time Too Long | '
+when ((CASE WHEN CONTAINER = 'x' THEN MIN_LEADTIME + 10 ELSE MIN_LEADTIME END) < LEAD_Time) and (Container <> 'x' and Lead_Time - Min_Leadtime <> 10) and Min_Leadtime = 2 then 'DC Lead Time Too Long due to Shelf Life | '
+when DC_Listing > Store_Listing then 'Negative DC to Store Lead Time | '
+when (DC_Listing = Store_Listing and Sub_Bulletin_Posted is null) then '0 DC to Store Lead Time |' else '' end Error_Messages,
+
+Display_ID,DESCRIPTION_EN, ASCG,
+DC,
+DC_STATUS,
+DC_LISTING,
+STORE_LISTING,
+Case when ((DC = 'GD08' and store_listing in ('20241204','20250122','20250226','20250326','20250430','20250528','20250625','20250723','20250827','20250924','20251022','20251126')) OR (DC <> 'GD08' and store_listing in ('20241127','20250122','20250226','20250326','20250430','20250528','20250625','20250723','20250827','20250924','20251022','20251126'))) then 'Yes'
+when Sub_Bulletin_Posted is not null then 'Sub Bulletin Sent '||Sub_Bulletin_Posted
+else 'No' End Monthly_Launch_or_Substitution,
+Sub_Bulletin_Posted,
+LEAD_TIME,
+CASE WHEN CONTAINER = 'x' THEN MIN_LEADTIME + 10 ELSE MIN_LEADTIME END AS MIN_LEADTIME,
+Contract_Valid_from,
+Contract_Valid_to,
+CONTRACT_NUMBER,
+Shelf_Life,
+Container FROM LEADTABLE
+
+where
+(Case when ((DC = 'GD08' and store_listing not in ('20241204','20250122','20250226','20250326','20250430','20250528','20250625','20250723','20250827','20250924','20251022','20251126')) OR (DC <> 'GD08' and store_listing not in ('20241127','20250122','20250226','20250326','20250430','20250528','20250625','20250723','20250827','20250924','20251022','20251126'))) and Sub_Bulletin_Posted is Null then 'Store Listing Missing OSD and no FT024 Bulletin Sent | '
+when ((CASE WHEN CONTAINER = 'x' THEN MIN_LEADTIME + 10 ELSE MIN_LEADTIME END) > LEAD_Time and DC_Listing - Store_Listing <= 0 and Sub_Bulletin_Posted is null) then 'DC Lead Time Too Short | '
+when ((CASE WHEN CONTAINER = 'x' THEN MIN_LEADTIME + 10 ELSE MIN_LEADTIME END) < LEAD_Time) and (Container <> 'x' and Lead_Time - Min_Leadtime <> 10) and Min_Leadtime <> 2 then 'DC Lead Time Too Long | '
+when ((CASE WHEN CONTAINER = 'x' THEN MIN_LEADTIME + 10 ELSE MIN_LEADTIME END) < LEAD_Time) and (Container <> 'x' and Lead_Time - Min_Leadtime <> 10) and Min_Leadtime = 2 then 'DC Lead Time Too Long due to Shelf Life | '
+when DC_Listing - Store_Listing > 0 then 'Negative DC to Store Lead Time | '
+when (DC_Listing = Store_Listing and Sub_Bulletin_Posted is null) then '0 DC to Store Lead Time |' else '' end) <> '' AND
+display_ID <> '545861' /*white listed product, lead time based on old LDC which is fine */		
+
+
+
