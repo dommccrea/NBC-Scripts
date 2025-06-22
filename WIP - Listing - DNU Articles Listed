@@ -85,7 +85,7 @@ LEFT JOIN MARC AS c
   ON c.MATNR = m.MATNR
  AND c.WERKS = dc_info.DC_FILIA
 WHERE
-  m.BSTAT   <> '30'
+  m.BSTAT   <> '20'
   AND m.MTART  = 'Z100'
   AND m.ATTYP IN ('00','01','02','12')
   AND (
