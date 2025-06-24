@@ -1,0 +1,92 @@
+WITH
+  -- 1) All rows in your eight prefixes
+  all_assortments AS (
+    SELECT FILIA, ARTNR, STRNR, DATAB, DATBI
+    FROM WLK1
+    WHERE
+      FILIA LIKE 'BRE-%'
+      OR FILIA LIKE 'DAN-%'
+      OR FILIA LIKE 'DER-%'
+      OR FILIA LIKE 'PRE-%'
+      OR FILIA LIKE 'MIN-%'
+      OR FILIA LIKE 'JKT-%'
+      OR FILIA LIKE 'STP-%'
+      OR FILIA LIKE 'AU-PRM-%'
+  ),
+
+  -- 2) Only those active today
+  open_assortments AS (
+    SELECT *
+    FROM all_assortments
+    WHERE
+      DATAB  <= CURRENT_DATE
+      AND (DATBI IS NULL OR DATBI >= CURRENT_DATE)
+  ),
+
+  -- 3a) Pick the display‐link (ARTNR=STRNR) with the furthest‐out end date
+  display_current AS (
+    SELECT FILIA, STRNR, DATAB, DATBI
+    FROM (
+      SELECT
+        FILIA, STRNR, DATAB, DATBI,
+        ROW_NUMBER() OVER (
+          PARTITION BY FILIA, STRNR
+          ORDER BY DATBI DESC, DATAB DESC
+        ) AS rn
+      FROM open_assortments
+      WHERE ARTNR = STRNR
+    ) t
+    WHERE rn = 1
+  ),
+
+  -- 3b) Pick each sellable‐link (ARTNR<>STRNR) with the furthest‐out end date
+  sellable_current AS (
+    SELECT FILIA, STRNR, ARTNR, DATAB, DATBI
+    FROM (
+      SELECT
+        FILIA, STRNR, ARTNR, DATAB, DATBI,
+        ROW_NUMBER() OVER (
+          PARTITION BY FILIA, STRNR, ARTNR
+          ORDER BY DATBI DESC, DATAB DESC
+        ) AS rn
+      FROM open_assortments
+      WHERE ARTNR <> STRNR
+    ) t
+    WHERE rn = 1
+  ),
+
+  -- 4) How many stores carry each Structured Article?
+  display_store_counts AS (
+    SELECT STRNR, COUNT(*) AS store_count
+    FROM display_current
+    GROUP BY STRNR
+  ),
+
+  -- 5) In how many of those stores does each sellable actually appear?
+  art_store_counts AS (
+    SELECT STRNR, ARTNR, COUNT(*) AS art_store_count
+    FROM sellable_current
+    GROUP BY STRNR, ARTNR
+  ),
+
+  -- 6) Flag only those STRNR with >1 store AND where ANY child is missing
+  mismatched_strnr AS (
+    SELECT d.STRNR
+    FROM display_store_counts d
+    LEFT JOIN art_store_counts a
+      ON a.STRNR = d.STRNR
+    WHERE
+      d.store_count > 1
+      AND (a.art_store_count IS NULL OR a.art_store_count <> d.store_count)
+  )
+
+-- 7) Final: all current sellables under those genuine mismatches
+SELECT
+  sc.STRNR  AS "Structured Article ID",
+  sc.ARTNR  AS "Article ID",
+  sc.FILIA  AS "Assortment",
+  sc.DATBI  AS "Valid To",
+  sc.DATAB  AS "Valid From"
+FROM sellable_current sc
+WHERE sc.STRNR IN (SELECT STRNR FROM mismatched_strnr)
+ORDER BY sc.STRNR, sc.ARTNR, sc.FILIA;
