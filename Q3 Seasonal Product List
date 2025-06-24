@@ -1,12 +1,18 @@
 SELECT
-      [Article]
-      ,[Medium_Description]
-      ,[Generic_Article]
-      ,[Linked_Main_Article]
-      ,[Brand_ID]
-      ,[Category]
-      ,[Purch_Grp_Buyer]
-  FROM [BIRD_IDS_DDS].[dds].[INT_OBJ_MD_Product]
+      p.[Article]
+      ,p.[Medium_Description]
+      ,p.[Generic_Article]
+      ,p.[Brand_ID]
+      ,b.[Short_Description]  
+      ,p.[Purch_Grp_Buyer]
+     ,c.[Short_Description]  
+  FROM [BIRD_IDS_DDS].[dds].[INT_OBJ_MD_Product] p
+LEFT JOIN 
+      [BIRD_IDS_DDS].[dds].[INT_OBJ_MD_BrandID] b
+      ON p.[Brand_ID] = b.[Brand_ID]
+LEFT JOIN
+      [BIRD_IDS_DDS].[dds].[INT_OBJ_MD_PurchasingGroup] c
+      ON p.[Purch_Grp_Buyer]= c.[Purchasing_Group]
 WHERE 
       TRY_CAST([Generic_Article] AS INT) IN (
           554767, 536561, 471767, 366957, 465768, 598230, 658319, 665511, 
