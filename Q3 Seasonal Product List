@@ -1,7 +1,7 @@
 SELECT
-      p.[Article]
+      p.[Generic_Article]      
+      ,p.[Article]
       ,p.[Medium_Description]
-      ,p.[Generic_Article]
       ,p.[Brand_ID]
       ,b.[Short_Description]  
       ,p.[Purch_Grp_Buyer]
