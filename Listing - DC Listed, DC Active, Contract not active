@@ -1,5 +1,3 @@
---- Script looks as Articles DC listed with a status 10 DC though the contract has not opened / starts in the future. DC and contract dates do not match
-
 SELECT DISTINCT
     MVKE.ZZPRGRP || ' - ' || T.EKNAM             AS BUYING_DIRECTOR,
     RIGHT(MARA.MATNR, 6)                         AS Display_ID,
@@ -22,7 +20,7 @@ SELECT DISTINCT
     X.KDATE                                      AS VALID_TO,
     X.SPINF                                      AS INFO_RECORD_UPDATE_INDICATOR,
     RIGHT(MARA.MATKL, 2) || ' - ' || WRF_MATGRP_MD4T.LTEXT AS ASCG_DESC,
-    'DC LISTED WITH STATUS 10 BUT CONTRACT STARTS IN FUTURE'  AS ERROR
+    'DC LISTED WITH ACTIVE DC BUT CONTRACT NOT OPEN'  AS ERROR
 FROM MARA
 INNER JOIN MVKE 
     ON MVKE.MATNR = MARA.MATNR 
@@ -94,7 +92,7 @@ LEFT JOIN WAKP
     ON WAKP.ARTNR = MARA.MATNR
 
 WHERE
-    MARC.MMSTA = '10'
+    MARC.MMSTA IN ('10', '21', '20', '11')
   AND DC.FILIA IS NOT NULL
   AND MARA.ATTYP = 12
   AND MARA.MTART = 'Z100'
