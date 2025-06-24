@@ -1,0 +1,122 @@
+SELECT DISTINCT
+    MVKE.ZZPRGRP || ' - ' || T.EKNAM             AS BUYING_DIRECTOR,
+    RIGHT(MARA.MATNR, 6)                         AS Display_ID,
+    MAKT_EN.MAKTX                                AS DESCRIPTION_EN,
+    CASE 
+        WHEN RIGHT(LEFT(MVKE.PRODH,5),1) = '1' THEN 'Core Range'
+        WHEN RIGHT(LEFT(MVKE.PRODH,5),1) = '3' THEN 'Seasonal'
+        ELSE ''
+    END                                          AS PRODUCT_HIERARCHY,
+    MARC.WERKS                                   AS DC,
+    MARC.MMSTA                                   AS DC_STATUS,
+    'x'                                          AS DC_LISTING,
+    -- new store-listing indicator and dates:
+    CASE WHEN STORE.ARTNR IS NOT NULL THEN 'x' ELSE '' END   AS STORE_LISTING,
+    STORE.DATAB                                  AS STORE_VALID_FROM,
+    STORE.DATBI                                  AS STORE_VALID_TO,
+    X.EBELN                                      AS CONTRACT_NUMBER,
+    X.EBELP                                      AS CONTRACT_ITEM,
+    X.KDATB                                      AS VALID_FROM,
+    X.KDATE                                      AS VALID_TO,
+    X.SPINF                                      AS INFO_RECORD_UPDATE_INDICATOR,
+    RIGHT(MARA.MATKL, 2) || ' - ' || WRF_MATGRP_MD4T.LTEXT AS ASCG_DESC,
+    'DC LISTED WITH STATUS 10 BUT CONTRACT STARTS IN FUTURE'  AS ERROR
+FROM MARA
+INNER JOIN MVKE 
+    ON MVKE.MATNR = MARA.MATNR 
+   AND MVKE.VKORG = '5998'
+   AND MVKE.VTWEG = '10'
+INNER JOIN MARC 
+    ON MARC.MATNR = MARA.MATNR 
+   AND MARC.WERKS IN (
+        'GD01','GD02','GD03','GD04','GD05','GD06',
+        'GD07','GD08','GD21','GD22','GD24'
+   )
+LEFT JOIN WLK1 DC 
+    ON DC.ARTNR = MARA.MATNR 
+   AND DC.FILIA = MARC.WERKS
+   AND DC.DATAB <= CURRENT_DATE 
+   AND DC.DATBI >= CURRENT_DATE
+
+-- your STORE join
+LEFT JOIN WLK1 STORE 
+  ON STORE.ARTNR = MARA.MATNR
+ AND STORE.DATBI > ADD_DAYS(CURRENT_DATE,2)
+ AND MARC.WERKS = CASE 
+        WHEN STORE.FILIA LIKE '%MIN-%' AND MARA.TEMPB IN ('9A','8A') THEN 'GD21'
+        WHEN STORE.FILIA LIKE '%MIN-%' AND MARA.TEMPB NOT IN ('9A','8A') THEN 'GD01'
+        WHEN STORE.FILIA LIKE '%DER-%' AND MARA.TEMPB IN ('9A','8A') THEN 'GD22'
+        WHEN STORE.FILIA LIKE '%DER-%' AND MARA.TEMPB NOT IN ('9A','8A') THEN 'GD02'
+        WHEN STORE.FILIA LIKE '%STP-%' THEN 'GD03'
+        WHEN STORE.FILIA LIKE '%PRE-%' AND MARA.TEMPB IN ('9A','8A') THEN 'GD21'
+        WHEN STORE.FILIA LIKE '%PRE-%' AND MARA.TEMPB NOT IN ('9A','8A') THEN 'GD04'
+        WHEN STORE.FILIA LIKE '%DAN-%' AND MARA.TEMPB IN ('9A','8A') THEN 'GD22'
+        WHEN STORE.FILIA LIKE '%DAN-%' AND MARA.TEMPB NOT IN ('9A','8A') THEN 'GD05'
+        WHEN STORE.FILIA LIKE '%BRE-%' THEN 'GD06'
+        WHEN STORE.FILIA LIKE '%RGY-%' THEN 'GD07'
+        WHEN STORE.FILIA LIKE '%JKT-%' THEN 'GD08'
+    END
+ AND STORE.FILIA NOT LIKE '%DUMY%'
+ AND STORE.FILIA NOT LIKE '%000%' 
+
+LEFT JOIN (
+    SELECT DISTINCT 
+        EKPO.MATNR,
+        EKPO.WERKS,
+        EKPO.EBELN,
+        EKPO.EBELP,
+        EKPO.SPINF,
+        EKKO.KDATB,
+        EKKO.KDATE,
+        EKPO.LOEKZ
+    FROM EKPO
+    INNER JOIN EKKO 
+      ON EKKO.EBELN = EKPO.EBELN 
+     AND EKKO.BSTYP = 'K'
+    WHERE 
+        EKKO.KDATB > CURRENT_DATE 
+      AND EKPO.LOEKZ <> 'L'
+) X 
+  ON X.MATNR = MARA.MATNR 
+ AND X.WERKS = MARC.WERKS
+
+LEFT JOIN MAKT MAKT_EN 
+    ON MAKT_EN.MATNR = MARA.MATNR 
+   AND MAKT_EN.SPRAS = 'E'
+LEFT JOIN T024 T 
+    ON T.EKGRP = MVKE.ZZPRGRP
+LEFT JOIN WRF_MATGRP_MD4T 
+    ON WRF_MATGRP_MD4T.NODE = MARA.MATKL 
+   AND WRF_MATGRP_MD4T.SPRAS = 'E'
+LEFT JOIN WAKP 
+    ON WAKP.ARTNR = MARA.MATNR
+
+WHERE
+    MARC.MMSTA IN ('10', '11', '21', '20')
+  AND DC.FILIA IS NOT NULL
+  AND MARA.ATTYP = 12
+  AND MARA.MTART = 'Z100'
+  AND (
+        RIGHT(LEFT(MARA.PRDHA,5),1) IN ('1','3') 
+     OR (
+           RIGHT(LEFT(MARA.PRDHA,5),1) = '4' 
+        AND RIGHT(LEFT(MVKE.PRODH,5),1) <> '2'
+       )
+  )
+  AND WAKP.ARTNR IS NULL
+  AND NOT EXISTS (
+      SELECT 1 
+      FROM EKPO CP
+      INNER JOIN EKKO CK 
+        ON CP.EBELN = CK.EBELN
+       AND CK.BSTYP = 'K'
+      WHERE 
+          CP.MATNR = MARA.MATNR 
+        AND CP.WERKS = MARC.WERKS 
+        AND CP.LOEKZ <> 'L'
+        AND CURRENT_DATE BETWEEN CK.KDATB AND CK.KDATE
+  )
+
+ORDER BY 
+    Display_ID, 
+    MARC.WERKS;
