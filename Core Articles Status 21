@@ -1,0 +1,30 @@
+SELECT DISTINCT
+    mvke.zzprgrp || ' - ' || t024.eknam    AS Buying_Director,
+    RIGHT(marc.matnr, 6)                   AS Article_Number,
+    makt.maktx                             AS Article_Description,
+    mara.prdha                             AS Prod_Hierarchy,
+    marc.werks                             AS DC,
+    marc.mmsta                             AS DC_Status,
+    mara.matkl                             AS Mdse_Cat
+FROM marc
+LEFT JOIN makt
+  ON makt.matnr = marc.matnr
+ AND makt.spras = 'E'
+LEFT JOIN mara
+  ON mara.matnr = marc.matnr
+
+JOIN mvke
+  ON mvke.matnr = mara.matnr
+ AND mvke.vkorg = '5998'
+ AND mvke.vtweg = '10'
+JOIN t024
+  ON t024.ekgrp = mvke.zzprgrp
+WHERE
+  mara.attyp = 12
+  AND mara.mtart = 'Z100'
+  AND marc.werks like ('GD%')
+  AND marc.mmsta = '21'
+  AND RIGHT(LEFT(mara.prdha, 5), 1) = '1'
+ORDER BY
+  Buying_Director,
+  Article_Number;
