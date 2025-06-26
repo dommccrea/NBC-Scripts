@@ -1,0 +1,63 @@
+WITH base_data AS (
+  SELECT DISTINCT
+    RIGHT(mara.matnr, 6)                                   AS DisplayID,
+    makt_en.maktx                                          AS Description,
+    CASE
+      WHEN RIGHT(LEFT(mvke.prodh,5),1) = '1' THEN 'Core Range'
+      WHEN RIGHT(LEFT(mvke.prodh,5),1) = '3' THEN 'Seasonal'
+      ELSE ''
+    END                                                     AS Product_Hierarchy,
+    marc.werks                                             AS DC,
+    marc.mmsta                                             AS DC_Status,
+    marcstore.mmsta                                        AS Store_Status,
+    TO_VARCHAR(TO_DATE(store.datab,'YYYYMMDD'),'DD/MM/YYYY') 
+                                                           AS Store_Status_Valid_From
+  FROM mara
+  -- merchandise category lookup (only for description; we filter below)
+  LEFT JOIN wrf_matgrp_md4t
+    ON wrf_matgrp_md4t.node = mara.matkl
+   AND wrf_matgrp_md4t.spras = 'E'
+  -- sales org / distribution channel
+  INNER JOIN mvke
+    ON mvke.matnr = mara.matnr
+   AND mvke.vkorg = '5998'
+   AND mvke.vtweg = '10'
+  -- DC assignment
+  INNER JOIN marc
+    ON marc.matnr = mara.matnr
+   AND marc.werks LIKE 'GD%'
+  -- store listing
+  LEFT JOIN wlk1 store
+    ON store.artnr = mara.matnr
+   AND store.datbi > CURRENT_DATE
+   
+ 
+  LEFT JOIN wrsz
+    ON wrsz.asort = store.filia
+   AND wrsz.datbi >= CURRENT_DATE
+  -- to get the actual store status from that store’s home DC
+  INNER JOIN marc marcstore
+    ON marcstore.matnr = mara.matnr
+   AND marcstore.werks = wrsz.locnr
+  -- English description
+  LEFT JOIN makt makt_en
+    ON makt_en.matnr = mara.matnr
+   AND makt_en.spras = 'E'
+  WHERE
+    -- only alcoholic beverages
+    RIGHT(mara.matkl, 2) = '01'
+    -- only active store listings
+    AND store.datbi > CURRENT_DATE
+    -- only those with store status = 31
+    AND marcstore.mmsta = '31'
+)
+SELECT
+  DisplayID,
+  Description,
+  Product_Hierarchy,
+  DC,
+  DC_Status,
+  Store_Status,
+  Store_Status_Valid_From
+FROM base_data
+ORDER BY DisplayID;
