@@ -1,0 +1,59 @@
+WITH blocked_stores AS (
+  SELECT DISTINCT
+    WRF1.LOCNR             AS STORE_FILIA,
+    WRF1.EROED             AS BLOCK_END_DATE,
+    WRF1.SCHLD             AS SCHEDULE_END_DATE,
+    WRF1.SPDBI             AS SPDBI_DATE
+  FROM   WRF1
+  WHERE  (
+           WRF1.EROED > CURRENT_DATE
+        OR WRF1.SCHLD <= CURRENT_DATE
+        OR WRF1.SPDBI > CURRENT_DATE
+         )
+    AND  WRF1.LOCNR LIKE 'G%'
+AND  WRF1.LOCNR NOT LIKE 'GD%'
+),
+active_articles AS (
+  SELECT DISTINCT
+    MARC.MATNR,
+    MARC.WERKS            AS STORE_FILIA,
+    MARC.MMSTA            AS ARTICLE_STATUS
+  FROM   MARC
+  INNER JOIN MVKE
+    ON  MVKE.MATNR = MARC.MATNR
+   AND  MVKE.VKORG = '5998'
+   AND  MVKE.VTWEG = '10'
+  INNER JOIN MARA
+    ON  MARA.MATNR = MARC.MATNR
+   AND  MARA.MTART = 'Z100'
+   AND  MARA.ATTYP = 12
+  WHERE  MARC.MMSTA <> '30'
+    AND  MARC.MMSTA <> '99'
+),
+valid_listings AS (
+  SELECT
+    ARTNR,
+    FILIA                AS STORE_FILIA,
+    DATAB                AS LISTING_VALID_FROM,
+    DATBI                AS LISTING_VALID_TO
+  FROM   WLK1
+  WHERE  DATBI > CURRENT_DATE
+)
+SELECT
+  bs.STORE_FILIA,
+  bs.BLOCK_END_DATE,
+  bs.SCHEDULE_END_DATE,
+  bs.SPDBI_DATE,
+  aa.MATNR                AS ARTICLE,
+  aa.ARTICLE_STATUS,
+  'Y'                     AS HAS_LISTING,
+  vl.LISTING_VALID_FROM,
+  vl.LISTING_VALID_TO
+FROM   blocked_stores bs
+INNER JOIN active_articles aa
+  ON  aa.STORE_FILIA = bs.STORE_FILIA
+INNER JOIN valid_listings vl
+  ON  vl.STORE_FILIA = bs.STORE_FILIA
+  AND vl.ARTNR       = aa.MATNR
+ORDER  BY bs.STORE_FILIA,
+          aa.MATNR;
