@@ -71,7 +71,7 @@ END AS PRODUCT_HIERARCHY,
         LEFT JOIN
                     WLK1 DC ON DC.ARTNR = MARA.MATNR AND
                     DC.DATBI > current_date AND
-                    DC.FILIA = MARC.WERKS                              /**--Update Region Here**/
+                    DC.FILIA = MARC.WERKS                              /* Update Region Here */
 
 
         LEFT JOIN
@@ -89,7 +89,7 @@ END AS PRODUCT_HIERARCHY,
                                     WHEN STORE.FILIA like '%DAN-%' THEN 'GD05'
                                     WHEN STORE.FILIA like '%BRE-%' THEN 'GD06'
                                     WHEN STORE.FILIA like '%RGY-%' and left(mara.matkl,4) <> '0001' THEN 'GD07'
-                                    WHEN STORE.FILIA like '%JKT-%' THEN 'GD08' END                                 /**--Update Store Assortment Here**/ AND
+                                    WHEN STORE.FILIA like '%JKT-%' THEN 'GD08' END                                 /* Update Store Assortment Here */ AND
                 store.filia not like '%000%'
 
 

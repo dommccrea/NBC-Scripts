@@ -66,7 +66,7 @@ SELECT
         LEFT JOIN
                     WLK1 DC ON DC.ARTNR = MARA.MATNR AND
                     DC.DATBI > current_date AND
-                    DC.FILIA = MARC.WERKS                              /**--Update Region Here**/
+                    DC.FILIA = MARC.WERKS                              /* Update Region Here */
 
 
         LEFT JOIN
@@ -79,7 +79,7 @@ SELECT
                                     WHEN STORE.FILIA like '%DAN-P%' THEN 'GD05'
                                     WHEN STORE.FILIA like '%BRE-P%' THEN 'GD06'
                                     WHEN STORE.FILIA like '%RGY-P%' THEN 'GD07'
-                                    WHEN STORE.FILIA like '%JKT-P%' THEN 'GD08' END                           /**--Update Store Assortment Here**/
+                                    WHEN STORE.FILIA like '%JKT-P%' THEN 'GD08' END                           /* Update Store Assortment Here */
                     			
         LEFT JOIN
                     WLK1 NAT ON NAT.ARTNR = COMP.MATNR AND
@@ -97,7 +97,7 @@ SELECT
                                     WHEN DC.FILIA = 'GD05' THEN 'GE'
                                     WHEN DC.FILIA = 'GD06' THEN 'GF'
                                     WHEN DC.FILIA = 'GD07' THEN 'GG'
-                                    WHEN DC.FILIA = 'GD08' THEN 'GH' END                                                                  /**--Update Retail Region here**/
+                                    WHEN DC.FILIA = 'GD08' THEN 'GH' END                                                                  /* Update Retail Region here */
         LEFT JOIN
                     KONP ON KONP.KNUMH = A155.KNUMH AND
                     KONP.KSCHL = A155.KSCHL
