@@ -5,15 +5,14 @@ cdpos.VALUE_NEW,
 cdpos.VALUE_OLD,
 cdpos.fname,
 cdpos.TABKEY,
-CDpos.tabname
+cdpos.tabname,
 CDHDR.username,
-cdhdr.tcode, 
+cdhdr.tcode,
 cdhdr.udate
 
 from CDPOS
 
 inner join cdhdr on
-
 cdhdr.changenr = cdpos.changenr and
 cdhdr.objectID = cdpos.objectID
 
@@ -21,5 +20,5 @@ where
 
 cdpos.tabname = 'DMARC'
 and cdpos.tabkey like 'GD%'
-and cdpos.value_old = '10
-and cdpos.fname = 'MMSTA'
+and cdpos.value_old = '10'
+and cdpos.fname = 'MMSTA';
