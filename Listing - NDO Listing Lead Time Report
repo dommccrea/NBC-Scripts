@@ -140,7 +140,7 @@ LEFT JOIN
 	WLK1 DC ON
 		DC.ARTNR = MARA.MATNR AND
 		DC.DATBI >= current_date AND
-		DC.FILIA = MARC.WERKS                              /**--Update Region Here**/
+		DC.FILIA = MARC.WERKS                              /* Update Region Here */
 
 
 LEFT JOIN
