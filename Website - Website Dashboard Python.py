@@ -331,9 +331,21 @@ def main():
         # Column widths and wrap text
         width_map = {
             'A': 16,  # SAP BD
+            'B': 14,
             'C': 35,  # Website Product Name
+            'D': 35,
+            'E': 19,
+            'F': 20,
+            'g': 27,
             'H': 86,  # Product Description
             'I': 71,  # Legal Disclaimer
+            'J': 15,
+            'K': 15,
+            'L': 15,
+            'M': 15,
+            'N': 15,
+            'O': 15,
+            'P': 15,
         }
         for col, width in width_map.items():
             ws.column_dimensions[col].width = width
