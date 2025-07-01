@@ -9,6 +9,7 @@ from openpyxl.formatting.rule import Rule
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.dataframe import dataframe_to_rows
 from rapidfuzz import fuzz
+from datetime import datetime
 
 # Paths to CSV files
 BASE_DIR = r'C:\Users\dmccrea\Documents\Python Scripts\New folder'
@@ -37,7 +38,8 @@ def load_region_lookup(conn):
     FROM dds.INT_OBJ_MD_Store
     """
     df = pd.read_sql(query, conn)
-    return dict(zip(df['StoreID'].astype(str), df['Region']))
+    df['StoreID'] = pd.to_numeric(df['StoreID'], errors='coerce').astype('Int64')
+    return dict(zip(df['StoreID'], df['Region']))
 
 
 def load_pricing_data():
@@ -48,7 +50,9 @@ def load_pricing_data():
     )
     df['concrete_sku'] = pd.to_numeric(df['concrete_sku'], errors='coerce').astype('Int64')
     df['value_gross'] = pd.to_numeric(df['value_gross'], errors='coerce').astype('Int64')
-    df = df[df['is_active'] == '1'].copy()
+    df['merchant_reference'] = pd.to_numeric(df['merchant_reference'], errors='coerce').astype('Int64')
+    # keep only active offers
+    df = df[df['is_active'].astype(str).str.lower().isin(['1', 'true'])].copy()
     df = df.rename(columns={
         'concrete_sku': 'SellableID',
         'merchant_reference': 'StoreID',
@@ -60,7 +64,7 @@ def load_pricing_data():
 def compute_product_pricing(pricing_df, region_map):
     df = pricing_df.copy()
     df['Retail'] = df['RetailCents'] / 100.0
-    df['Region'] = df['StoreID'].astype(str).map(region_map)
+    df['Region'] = df['StoreID'].map(region_map)
     df = df.dropna(subset=['Region'])
     df = df.drop_duplicates(subset=['SellableID', 'Retail', 'Region'])
 
@@ -81,7 +85,7 @@ def compute_product_pricing(pricing_df, region_map):
 
 def compute_product_location(pricing_df, region_map):
     df = pricing_df[['SellableID', 'StoreID']].drop_duplicates()
-    df['Region'] = df['StoreID'].astype(str).map(region_map)
+    df['Region'] = df['StoreID'].map(region_map)
     df = df.dropna(subset=['Region'])
 
     grouped = df.groupby('SellableID').agg(
@@ -175,6 +179,44 @@ def load_product_images():
     df['concrete_sku'] = df['concrete_sku'].str.lstrip('0')
     df['SellableID'] = pd.to_numeric(df['concrete_sku'], errors='coerce').astype('Int64')
     return df[['SellableID']].dropna()
+
+
+def load_earliest_listing(conn):
+    query = """
+        SELECT Article AS SellableID,
+               MIN(Listing_Date_From) AS EarliestActiveOSD
+        FROM dds.INT_OBJ_ArticleListing
+        WHERE Plant_Category = 'A' AND Listing_Date_To = '9999-12-31'
+        GROUP BY Article
+    """
+    df = pd.read_sql(query, conn)
+    df['SellableID'] = pd.to_numeric(df['SellableID'], errors='coerce').astype('Int64')
+    return df
+
+
+def load_store_lookup(conn):
+    query = """
+        SELECT [AHEAD_Plant_ID] AS StoreID,
+               [AHEAD_Store_Name] AS StoreName,
+               [Legacy_Region_Name_Short] AS Region
+        FROM dds.INT_OBJ_MD_Store
+    """
+    df = pd.read_sql(query, conn)
+    df['StoreID'] = pd.to_numeric(df['StoreID'], errors='coerce').astype('Int64')
+    return df
+
+
+def compute_store_examples(pricing_df, store_df):
+    df = pricing_df[['SellableID', 'StoreID']].copy()
+    df = df.merge(store_df, on='StoreID', how='left')
+    df = df.dropna(subset=['Region'])
+
+    grouped = df.groupby(['SellableID', 'Region'])['StoreName'].apply(lambda x: sorted(set(x))[:5]).reset_index()
+
+    for i in range(5):
+        grouped[f'Store{i+1}'] = grouped['StoreName'].apply(lambda lst, i=i: lst[i] if len(lst) > i else '')
+    grouped = grouped.drop(columns='StoreName')
+    return grouped
 
 
 def build_dashboard(df_catalog, df_location, df_gp, df_price, df_images):
@@ -291,18 +333,31 @@ def build_dashboard(df_catalog, df_location, df_gp, df_price, df_images):
 
 
 def main():
-    output_path = os.path.join(BASE_DIR, 'Website_Dashboard_Output.xlsx')
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    output_path = os.path.join(BASE_DIR, f'Website_Dashboard_Output_{timestamp}.xlsx')
     os.makedirs(BASE_DIR, exist_ok=True)
     try:
         conn = pyodbc.connect(CONN_STR)
         region_map = load_region_lookup(conn)
+        store_lookup = load_store_lookup(conn)
         pricing_base = load_pricing_data()
         pricing_data = compute_product_pricing(pricing_base, region_map)
         location_data = compute_product_location(pricing_base, region_map)
+        store_examples = compute_store_examples(pricing_base, store_lookup)
         catalog = load_product_catalog()
         gp_info = load_general_product_info(conn)
         images_df = load_product_images()
+        listing_df = load_earliest_listing(conn)
         final_df = build_dashboard(catalog, location_data, gp_info, pricing_data, images_df)
+
+        final_df = final_df.merge(
+            listing_df,
+            left_on='Sellable ID',
+            right_on='SellableID',
+            how='left'
+        ).drop(columns=['SellableID'])
+        final_df = final_df.rename(columns={'EarliestActiveOSD': 'Earliest Active Listing'})
+        final_df['Active Listing'] = final_df['Earliest Active Listing'].notna()
 
         # Compute fuzzy match score between website and SAP product names
         final_df['Fuzzy Score'] = final_df.apply(
@@ -329,7 +384,7 @@ def main():
             'Legal Disclaimer', 'Image Status', 'Hierarchy',
             'SAP Commodity Group', 'SAP Sub Commodity Group',
             'Brand', 'Net Content', 'Product Link',
-            'Multiple Prices', 'Deviation'
+            'Multiple Prices', 'Earliest Active Listing', 'Active Listing', 'Deviation'
         ]
         final_df = final_df[column_order]
 
@@ -361,6 +416,9 @@ def main():
             'P': 15,  # Brand
             'Q': 15,  # Net Content
             'R': 15,  # Product Link
+            'S': 18,  # Multiple Prices
+            'T': 18,  # Earliest Active Listing
+            'U': 15,  # Active Listing
         }
         for col, width in width_map.items():
             ws.column_dimensions[col].width = width
@@ -439,6 +497,11 @@ def main():
         for r in dataframe_to_rows(pivot_df, index=False, header=True):
             piv_ws.append(r)
         piv_ws.auto_filter.ref = piv_ws.dimensions
+
+        store_ws = wb.create_sheet('Sample Stores')
+        for r in dataframe_to_rows(store_examples, index=False, header=True):
+            store_ws.append(r)
+        store_ws.auto_filter.ref = store_ws.dimensions
 
         wb.save(output_path)
         print(f"Export successful! File saved to: {output_path}")
