@@ -8,6 +8,7 @@ from openpyxl.styles.differential import DifferentialStyle
 from openpyxl.formatting.rule import Rule
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.dataframe import dataframe_to_rows
+from rapidfuzz import fuzz
 
 # Paths to CSV files
 BASE_DIR = r'C:\Users\dmccrea\Documents\Python Scripts\New folder'
@@ -300,6 +301,14 @@ def main():
         images_df = load_product_images()
         final_df = build_dashboard(catalog, location_data, gp_info, pricing_data, images_df)
 
+        # Compute fuzzy match score between website and SAP product names
+        final_df['Fuzzy Score'] = final_df.apply(
+            lambda r: fuzz.token_sort_ratio(str(r['Website Product Name']), str(r['SAP Product Name'])),
+            axis=1
+        )
+        threshold = 60
+        final_df['Possible Mismatch'] = final_df['Fuzzy Score'] < threshold
+
         # Determine most common store count per region combination
         mode_map = (final_df.groupby('Regions On Website')['Available in Stores (Count)']
                     .agg(lambda x: x.mode().iat[0] if not x.mode().empty else None))
@@ -311,6 +320,7 @@ def main():
          # Append helper column for formatting
         column_order = [
             'SAP BD', 'Sellable ID', 'Website Product Name', 'SAP Product Name',
+            'Fuzzy Score', 'Possible Mismatch',
             'Regions On Website', 'Available in Stores (Count)',
             'Retail by Region (updated weekly)', 'Product Description',
             'Legal Disclaimer', 'Image Status', 'Hierarchy',
@@ -333,19 +343,21 @@ def main():
             'A': 16,  # SAP BD
             'B': 14,
             'C': 35,  # Website Product Name
-            'D': 35,
-            'E': 19,
-            'F': 20,
-            'g': 27,
-            'H': 86,  # Product Description
-            'I': 71,  # Legal Disclaimer
-            'J': 15,
-            'K': 15,
-            'L': 15,
-            'M': 15,
-            'N': 15,
-            'O': 15,
-            'P': 15,
+            'D': 35,  # SAP Product Name
+            'E': 15,  # Fuzzy Score
+            'F': 15,  # Possible Mismatch
+            'G': 19,  # Regions On Website
+            'H': 20,  # Available in Stores (Count)
+            'I': 27,  # Retail by Region
+            'J': 86,  # Product Description
+            'K': 71,  # Legal Disclaimer
+            'L': 15,  # Image Status
+            'M': 15,  # Hierarchy
+            'N': 15,  # SAP Commodity Group
+            'O': 15,  # SAP Sub Commodity Group
+            'P': 15,  # Brand
+            'Q': 15,  # Net Content
+            'R': 15,  # Product Link
         }
         for col, width in width_map.items():
             ws.column_dimensions[col].width = width
@@ -409,6 +421,16 @@ def main():
             Product_Count=('Sellable ID', 'nunique'),
             No_Image_Count=('Image Status', lambda x: (x == 'No Image Online').sum())
         ).reset_index()
+
+        # Export potential name mismatches
+        mismatch_df = final_df[final_df['Possible Mismatch']]
+        if not mismatch_df.empty:
+            print("Possible mismatches found:")
+            print(mismatch_df[['Sellable ID', 'Website Product Name', 'SAP Product Name', 'Fuzzy Score']])
+            mm_ws = wb.create_sheet('Possible Mismatch')
+            for r in dataframe_to_rows(mismatch_df, index=False, header=True):
+                mm_ws.append(r)
+            mm_ws.auto_filter.ref = mm_ws.dimensions
 
         piv_ws = wb.create_sheet('BD Pivot')
         for r in dataframe_to_rows(pivot_df, index=False, header=True):
