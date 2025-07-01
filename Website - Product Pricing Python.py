@@ -32,8 +32,12 @@ try:
     df = pd.read_csv(
         csv_path,
         usecols=['concrete_sku', 'merchant_reference', 'value_gross', 'is_active'],
-        dtype={'concrete_sku': 'int64', 'merchant_reference': 'str', 'value_gross': 'int64', 'is_active': 'str'}
+        dtype={'merchant_reference': 'string', 'is_active': 'string'}
     )
+
+    # Allow for missing integers by converting after read
+    df['concrete_sku'] = pd.to_numeric(df['concrete_sku'], errors='coerce').astype('Int64')
+    df['value_gross'] = pd.to_numeric(df['value_gross'], errors='coerce').astype('Int64')
 
     # --------------------------------------------------------------
     # 2. Filter active records and rename columns
