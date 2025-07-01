@@ -1,0 +1,19 @@
+let
+    Source = Sql.Database("5909z0ndbsrvt02", "BIRD_IDS_DDS", [
+        Query = "
+            SELECT [Article] as SellableID,
+                   min([Listing_Date_From]) as EarliestActiveOSD,
+                   [Listing_Date_To]
+            FROM [BIRD_IDS_DDS].[dds].[INT_OBJ_ArticleListing]
+            WHERE Plant_Category = 'A'
+              AND Listing_Date_To = '9999-12-31'
+            GROUP BY Article, Listing_Date_To
+            ORDER BY Article"
+    ]),
+    #"Changed Type" = Table.TransformColumnTypes(Source, {
+        {"EarliestActiveOSD", type date},
+        {"Listing_Date_To", type date}
+    }),
+    #"Filtered Numeric IDs" = Table.SelectRows(#"Changed Type", each Text.Select(Text.From([SellableID]), {"0".."9"}) = Text.From([SellableID]))
+in
+    #"Filtered Numeric IDs"
