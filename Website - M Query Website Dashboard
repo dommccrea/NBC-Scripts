@@ -1,0 +1,187 @@
+let
+//------------------------------------------------------------------
+// 1.  FAST: pull the CSV directly (no SharePoint.Files crawl)
+    FileBinary = Web.Contents(
+        "https://asgportal.sharepoint.com/sites/5999-com-0158/Shared Documents/Website/00 Admin/Reports/Data Tables/AU_products_en_AU.csv"
+    ),
+    CsvData = Csv.Document(
+        FileBinary,
+        [Delimiter = ",", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]
+    ),
+    Headers = Table.PromoteHeaders(CsvData, [PromoteAllScalars = true]),
+
+//------------------------------------------------------------------
+// 2.  Keep only what you need, tidy & rename along the way
+    Trimmed = Table.SelectColumns(
+        Headers,
+        {
+            "concrete_sku", "is_active",
+            "name", "description", "brand_name",
+            "price_unit", "comparison_price_unit",
+            "net_content", "content_unit",
+            "product_class", "legal_disclaimer"
+        }
+    ),
+
+    // strip leading zeros from SKU while still text
+    CleanNames = Table.TransformColumns(
+        Trimmed,
+        {{"concrete_sku", each Text.TrimStart(_, {"0"}), type text}}
+    ),
+
+    // merge net_content + content_unit
+    Packed = Table.CombineColumns(
+        CleanNames, {"net_content","content_unit"},
+        Combiner.CombineTextByDelimiter(" ", QuoteStyle.None), "Net Content"
+    ),
+
+    Renamed = Table.RenameColumns(
+        Packed,
+        {
+            {"concrete_sku"           , "Sellable ID"},
+            {"is_active"              , "Online Active"},
+            {"name"                   , "Product Name"},
+            {"description"            , "Product Description"},
+            {"brand_name"             , "Brand"},
+            {"price_unit"             , "Unit"},
+            {"comparison_price_unit"  , "Comparison Unit Price"},
+            {"product_class"          , "Hierarchy"},
+            {"legal_disclaimer"       , "Legal Disclaimer"}
+        }
+    ),
+
+//------------------------------------------------------------------
+// 3.  Cast types once, now the table is leaner
+    Typed = Table.TransformColumnTypes(
+        Renamed,
+        {{"Sellable ID", Int64.Type}} // the rest stay as text
+    ),
+
+//------------------------------------------------------------------
+// 4.  Strip basic HTML tags from description
+    Tags    = {"<p>","</p>","<br>","<CRLF>","<li>","</li>","<ul>","</ul>","<strong>","</strong>"},
+    Descrip = List.Accumulate(
+        Tags, Typed,
+        (t, tag) => Table.ReplaceValue(t, tag, "", Replacer.ReplaceText, {"Product Description"})
+    ),
+
+//------------------------------------------------------------------
+// 5.  LOOKUP TABLES – buffer once for faster joins
+    ProductLocation_B = Table.Buffer(#"Product Location"),
+    GPInfo_B          = Table.Buffer(#"General Product Info BIRD"),
+    Pricing_B         = Table.Buffer(#"Product Pricing"),
+
+//------------------------------------------------------------------
+// 6.  Join Regions / StoreCount
+    JoinedLoc = Table.NestedJoin(
+        Descrip, {"Sellable ID"},
+        ProductLocation_B, {"SellableID"},
+        "Loc", JoinKind.LeftOuter
+    ),
+    ExpandedLoc = Table.ExpandTableColumn(
+        JoinedLoc, "Loc",
+        {"Regions","StoreCount"},
+        {"Available Online by Region","Available in Stores (Count)"}
+    ),
+    FixLoc = Table.ReplaceValue(
+        ExpandedLoc, null, "Not Online",
+        Replacer.ReplaceValue, {"Available Online by Region"}
+    ),
+    FixCnt = Table.ReplaceValue(
+        FixLoc, null, 0,
+        Replacer.ReplaceValue, {"Available in Stores (Count)"}
+    ),
+
+//------------------------------------------------------------------
+// 7.  Add website link (raw URL auto-hyperlinks in Excel)
+    AddLink = Table.AddColumn(
+        FixCnt, "Product Link",
+        each if [Sellable ID] <> null then
+                "https://www.aldi.com.au/product/" &
+                Text.PadStart(Text.From([Sellable ID]), 18, "0")
+             else null,
+        type text
+    ),
+
+//------------------------------------------------------------------
+// 8.  Join General Product Info
+    JoinGP = Table.NestedJoin(
+        AddLink, {"Sellable ID"},
+        GPInfo_B, {"SellableID"},
+        "GP", JoinKind.LeftOuter
+    ),
+    ExpandGP = Table.ExpandTableColumn(
+        JoinGP, "GP",
+        {"Description","BD","Hierarchy","CG","SCG"},
+        {"SAP Description","SAP BD","SAP Hierarchy","SAP Commodity Group","SAP Sub Commodity Group"}
+    ),
+
+//------------------------------------------------------------------
+// 9.  Final small clean-ups
+    ReplaceBad = Table.ReplaceValue(
+        ExpandGP, "%nbsp;", "-", Replacer.ReplaceText, {"Product Description"}
+    ),
+    ReplaceAmp = Table.ReplaceValue(
+        ReplaceBad, "&amp", "", Replacer.ReplaceText, {"Product Description"}
+    ),
+    ReplaceStr = Table.ReplaceValue(
+        ReplaceAmp, "/1111111153", "", Replacer.ReplaceText, {"Product Description"}
+    ),
+    DropFlags  = Table.RemoveColumns(ReplaceStr, {"Online Active"}),
+    #"Merged Queries" = Table.NestedJoin(DropFlags, {"Sellable ID"}, #"Product Pricing", {"Sellable ID"}, "Product Pricing", JoinKind.LeftOuter),
+    #"Expanded Product Pricing" = Table.ExpandTableColumn(#"Merged Queries", "Product Pricing", {"Retail", "Regions"}, {"Product Pricing.Retail", "Product Pricing.Regions"}),
+//------------------------------------------------------------------
+//------------------------------------------------------------------
+//------------------------------------------------------------------
+// 11A.  Compact view – keep national store count untouched
+    Grouped = Table.Group(
+        #"Expanded Product Pricing",
+        {"Sellable ID"},
+        {
+            /* descriptive fields */
+            {"Product Name"            , each List.First([Product Name])            , type text},
+            {"Brand"                   , each List.First([Brand])                   , type text},
+            {"SAP Description",          each List.First([SAP Description]), type text},
+
+            {"Net Content"             , each List.First([Net Content])             , type text},
+            {"SAP BD"                  , each List.First([SAP BD])                  , type text},
+            {"Hierarchy"               , each List.First([Hierarchy])               , type text},
+            {"SAP Commodity Group"     , each List.First([SAP Commodity Group])     , type text},
+            {"SAP Sub Commodity Group" , each List.First([SAP Sub Commodity Group]) , type text},
+            {"Product Link"            , each List.First([Product Link])            , type text},
+
+            /* national store count – unchanged */
+            {"Available in Stores (Count)",
+                each List.First([#"Available in Stores (Count)"]), Int64.Type},
+
+            /* regions as a comma-separated list */
+            {"Regions (list)"          , each Text.Combine(List.Distinct([Product Pricing.Regions]), ", "), type text},
+
+            /* “Region: Retail” pairs */
+            {"Retail by Region"        , each
+                Text.Combine(
+                    List.Transform(
+                        List.Distinct(
+                            List.Sort(
+                                List.Transform(
+                                    Table.ToRows(
+                                        Table.SelectColumns(_, {"Product Pricing.Regions","Product Pricing.Retail"})
+                                    ),
+                                    each _{0} & ": " & Text.From(_{1})
+                                )
+                            )
+                        ),
+                    each _),
+                ", "),
+                type text
+            }
+        }
+    ),
+    #"Renamed Columns" = Table.RenameColumns(Grouped,{{"Regions (list)", "Regions On Website"}}),
+    #"Reordered Columns" = Table.ReorderColumns(#"Renamed Columns",{"SAP BD", "Sellable ID", "Product Name", "Hierarchy", "SAP Commodity Group", "SAP Sub Commodity Group", "Available in Stores (Count)", "Regions On Website", "Retail by Region", "Brand", "Net Content", "Product Link"}),
+    #"Renamed Columns1" = Table.RenameColumns(#"Reordered Columns",{{"SAP Description", "SAP Product Name"}, {"Product Name", "Website Product Name"}}),
+    #"Reordered Columns1" = Table.ReorderColumns(#"Renamed Columns1",{"SAP BD", "Sellable ID", "Website Product Name", "SAP Product Name", "Available in Stores (Count)", "Regions On Website", "Retail by Region", "Hierarchy", "SAP Commodity Group", "SAP Sub Commodity Group", "Brand", "Net Content", "Product Link"}),
+    #"Renamed Columns2" = Table.RenameColumns(#"Reordered Columns1",{{"Retail by Region", "Retail by Region (updated weekly)"}})
+
+in
+    #"Renamed Columns2"
