@@ -1,11 +1,13 @@
 import os
 import pandas as pd
 import pyodbc
+from html import unescape
 
 # Paths to CSV files
 BASE_DIR = r'C:\Users\dmccrea\Documents\Python Scripts\New folder'
 PRICING_CSV = os.path.join(BASE_DIR, 'AU_product_offer_price_en_AU.csv')
 PRODUCTS_CSV = os.path.join(BASE_DIR, 'AU_products_en_AU.csv')
+IMAGES_CSV = os.path.join(BASE_DIR, 'AU_product_image_en_AU.csv')
 
 # SQL Server connection parameters
 SERVER = '5909z0ndbsrvt02'
@@ -119,11 +121,13 @@ def load_product_catalog():
         'Legal Disclaimer'
     ]]
 
-    tags = ['<p>', '</p>', '<br>', '<CRLF>', '<li>', '</li>', '<ul>', '</ul>', '<strong>', '</strong>']
-    for tag in tags:
-        df['Product Description'] = df['Product Description'].str.replace(tag, '', regex=False)
-    df['Product Description'] = df['Product Description'].str.replace('&amp', '', regex=False)
-    df['Product Description'] = df['Product Description'].str.replace('/1111111153', '', regex=False)
+    # Clean HTML from descriptions and decode entities
+    df['Product Description'] = (
+        df['Product Description']
+        .astype(str)
+        .str.replace(r'<[^>]+>', '', regex=True)
+        .apply(unescape)
+    )
     return df
 
 
@@ -150,7 +154,20 @@ def load_general_product_info(conn):
     return df
 
 
-def build_dashboard(df_catalog, df_location, df_gp, df_price):
+def load_product_images():
+    """Return dataframe of sellable IDs that have images online."""
+    try:
+        df = pd.read_csv(IMAGES_CSV, usecols=[0], dtype=str)
+    except FileNotFoundError:
+        return pd.DataFrame(columns=['SellableID'])
+
+    df = df.rename(columns={df.columns[0]: 'concrete_sku'})
+    df['concrete_sku'] = df['concrete_sku'].str.lstrip('0')
+    df['SellableID'] = pd.to_numeric(df['concrete_sku'], errors='coerce').astype('Int64')
+    return df[['SellableID']].dropna()
+
+
+def build_dashboard(df_catalog, df_location, df_gp, df_price, df_images):
     df = df_catalog.merge(
         df_location,
         left_on='Sellable ID',
@@ -194,6 +211,13 @@ def build_dashboard(df_catalog, df_location, df_gp, df_price):
         right_on='SellableID',
         how='left'
     ).drop(columns=['SellableID'])
+
+    df = df.merge(
+        df_images.assign(ImageStatus='Image Online'),
+        left_on='Sellable ID',
+        right_on='SellableID',
+        how='left'
+    ).drop(columns=['SellableID'])
     df = df.rename(columns={
         'Retail': 'Product Pricing.Retail',
         'Regions': 'Product Pricing.Regions'
@@ -213,6 +237,7 @@ def build_dashboard(df_catalog, df_location, df_gp, df_price):
         grouped.append({
             'Sellable ID': sid,
             'Product Name': first_row['Product Name'],
+            'Product Description': first_row['Product Description'],
             'Brand': first_row['Brand'],
             'SAP Description': first_row.get('SAP Description'),
             'Net Content': first_row['Net Content'],
@@ -220,6 +245,8 @@ def build_dashboard(df_catalog, df_location, df_gp, df_price):
             'Hierarchy': first_row.get('SAP Hierarchy') or first_row.get('Hierarchy'),
             'SAP Commodity Group': first_row.get('SAP Commodity Group'),
             'SAP Sub Commodity Group': first_row.get('SAP Sub Commodity Group'),
+            'Legal Disclaimer': first_row.get('Legal Disclaimer'),
+            'Image Status': first_row.get('ImageStatus', 'No Image Online'),
             'Product Link': first_row['Product Link'],
             'Available in Stores (Count)': first_row['Available in Stores (Count)'],
             'Regions On Website': region_label,
@@ -228,10 +255,13 @@ def build_dashboard(df_catalog, df_location, df_gp, df_price):
 
     out = pd.DataFrame(grouped)
     out = out.rename(columns={'Product Name': 'Website Product Name', 'SAP Description': 'SAP Product Name'})
-    out = out[['SAP BD', 'Sellable ID', 'Website Product Name', 'SAP Product Name',
-               'Available in Stores (Count)', 'Regions On Website', 'Retail by Region',
-               'Hierarchy', 'SAP Commodity Group', 'SAP Sub Commodity Group', 'Brand',
-               'Net Content', 'Product Link']]
+    out = out[[
+        'SAP BD', 'Sellable ID', 'Website Product Name', 'SAP Product Name',
+        'Available in Stores (Count)', 'Regions On Website', 'Retail by Region',
+        'Hierarchy', 'SAP Commodity Group', 'SAP Sub Commodity Group', 'Brand',
+        'Net Content', 'Product Description', 'Legal Disclaimer', 'Image Status', 'Product Link'
+    ]]
+    out['Image Status'] = out['Image Status'].fillna('No Image Online')
     out = out.rename(columns={'Retail by Region': 'Retail by Region (updated weekly)'})
     return out
 
@@ -247,8 +277,16 @@ def main():
         location_data = compute_product_location(pricing_base, region_map)
         catalog = load_product_catalog()
         gp_info = load_general_product_info(conn)
-        final_df = build_dashboard(catalog, location_data, gp_info, pricing_data)
+        images_df = load_product_images()
+        final_df = build_dashboard(catalog, location_data, gp_info, pricing_data, images_df)
         final_df.to_excel(output_path, index=False)
+
+        # Apply basic filters to the worksheet
+        from openpyxl import load_workbook
+        wb = load_workbook(output_path)
+        ws = wb.active
+        ws.auto_filter.ref = ws.dimensions
+        wb.save(output_path)
         print(f"Export successful! File saved to: {output_path}")
         os.startfile(output_path)
     except Exception as e:
