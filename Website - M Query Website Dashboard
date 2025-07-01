@@ -50,10 +50,13 @@ let
         }
     ),
 
+    // remove inactive articles
+    ActiveOnly = Table.SelectRows(Renamed, each [Online Active] <> "0"),
+
 //------------------------------------------------------------------
 // 3.  Cast types once, now the table is leaner
     Typed = Table.TransformColumnTypes(
-        Renamed,
+        ActiveOnly,
         {{"Sellable ID", Int64.Type}} // the rest stay as text
     ),
 

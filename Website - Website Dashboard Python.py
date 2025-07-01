@@ -107,6 +107,9 @@ def load_product_catalog():
         dtype=str
     )
 
+    # Exclude inactive articles
+    df = df[df['is_active'] != '0']
+
     df['concrete_sku'] = df['concrete_sku'].str.lstrip('0')
     df['Sellable ID'] = pd.to_numeric(df['concrete_sku'], errors='coerce').astype('Int64')
     df['Net Content'] = df['net_content'].fillna('').astype(str) + ' ' + df['content_unit'].fillna('').astype(str)
