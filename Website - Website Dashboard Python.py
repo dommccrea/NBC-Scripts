@@ -2,6 +2,11 @@ import os
 import pandas as pd
 import pyodbc
 from html import unescape
+from collections import defaultdict
+from openpyxl import load_workbook
+from openpyxl.styles import PatternFill, Font, Alignment
+from openpyxl.utils import get_column_letter
+from openpyxl.utils.dataframe import dataframe_to_rows
 
 # Paths to CSV files
 BASE_DIR = r'C:\Users\dmccrea\Documents\Python Scripts\New folder'
@@ -224,6 +229,7 @@ def build_dashboard(df_catalog, df_location, df_gp, df_price, df_images):
     })
 
     grouped = []
+    multi_price_ids = set()
     for sid, grp in df.groupby('Sellable ID'):
         first_row = grp.iloc[0]
         regions_list = ', '.join(sorted(set(grp['Product Pricing.Regions'].dropna())))
@@ -234,6 +240,8 @@ def build_dashboard(df_catalog, df_location, df_gp, df_price, df_images):
         price_pairs = grp[['Product Pricing.Regions', 'Product Pricing.Retail']].dropna()
         price_pairs = price_pairs.drop_duplicates().sort_values(['Product Pricing.Regions', 'Product Pricing.Retail'])
         retail_by_region = ', '.join(f"{r}: {p}" for r, p in zip(price_pairs['Product Pricing.Regions'], price_pairs['Product Pricing.Retail']))
+        if price_pairs['Product Pricing.Retail'].nunique() > 1:
+            multi_price_ids.add(sid)
         grouped.append({
             'Sellable ID': sid,
             'Product Name': first_row['Product Name'],
@@ -256,14 +264,26 @@ def build_dashboard(df_catalog, df_location, df_gp, df_price, df_images):
     out = pd.DataFrame(grouped)
     out = out.rename(columns={'Product Name': 'Website Product Name', 'SAP Description': 'SAP Product Name'})
     out = out[[
-        'SAP BD', 'Sellable ID', 'Website Product Name', 'SAP Product Name',
-        'Available in Stores (Count)', 'Regions On Website', 'Retail by Region',
-        'Hierarchy', 'SAP Commodity Group', 'SAP Sub Commodity Group', 'Brand',
-        'Net Content', 'Product Description', 'Legal Disclaimer', 'Image Status', 'Product Link'
+        'SAP BD',
+        'Sellable ID',
+        'Website Product Name',
+        'SAP Product Name',
+        'Regions On Website',
+        'Available in Stores (Count)',
+        'Retail by Region',
+        'Product Description',
+        'Legal Disclaimer',
+        'Image Status',
+        'Hierarchy',
+        'SAP Commodity Group',
+        'SAP Sub Commodity Group',
+        'Brand',
+        'Net Content',
+        'Product Link'
     ]]
     out['Image Status'] = out['Image Status'].fillna('No Image Online')
     out = out.rename(columns={'Retail by Region': 'Retail by Region (updated weekly)'})
-    return out
+    return out, multi_price_ids
 
 
 def main():
@@ -278,14 +298,94 @@ def main():
         catalog = load_product_catalog()
         gp_info = load_general_product_info(conn)
         images_df = load_product_images()
-        final_df = build_dashboard(catalog, location_data, gp_info, pricing_data, images_df)
-        final_df.to_excel(output_path, index=False)
+        final_df, multi_price_ids = build_dashboard(catalog, location_data, gp_info, pricing_data, images_df)
 
-        # Apply basic filters to the worksheet
-        from openpyxl import load_workbook
+        # Build pivot summarising product counts by BD
+        pivot_df = final_df[final_df['Available in Stores (Count)'] > 0]
+        pivot = (
+            pivot_df.groupby('SAP BD')
+                    .agg(
+                        Product_Count=('Sellable ID', 'nunique'),
+                        No_Image_Count=('Image Status', lambda x: (x == 'No Image Online').sum())
+                    )
+                    .reset_index()
+        )
+
+        with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+            final_df.to_excel(writer, index=False, sheet_name='Dashboard')
+            pivot.to_excel(writer, index=False, sheet_name='BD Pivot')
+
+        # Apply formatting and filters
         wb = load_workbook(output_path)
-        ws = wb.active
+        ws = wb['Dashboard']
         ws.auto_filter.ref = ws.dimensions
+
+        col_indices = {c: i + 1 for i, c in enumerate(final_df.columns)}
+        count_col = col_indices['Available in Stores (Count)']
+        region_col = col_indices['Regions On Website']
+        retail_col = col_indices['Retail by Region (updated weekly)']
+        image_col = col_indices['Image Status']
+        brand_col = col_indices['Brand']
+        net_col = col_indices['Net Content']
+        link_col = col_indices['Product Link']
+        desc_col = col_indices['Product Description']
+        legal_col = col_indices['Legal Disclaimer']
+
+        # Column widths and wrapping
+        width_map = {
+            get_column_letter(col_indices['SAP BD']): 17,
+            get_column_letter(col_indices['Website Product Name']): 35,
+            get_column_letter(desc_col): 86,
+            get_column_letter(legal_col): 72,
+        }
+        for col_letter, width in width_map.items():
+            ws.column_dimensions[col_letter].width = width
+        for row in ws.iter_rows(min_row=2, min_col=desc_col, max_col=desc_col, max_row=ws.max_row):
+            for cell in row:
+                cell.alignment = Alignment(wrap_text=True)
+
+        # Hyperlink Product Link column
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=link_col, max_col=link_col):
+            for cell in row:
+                if cell.value:
+                    cell.hyperlink = cell.value
+                    cell.value = 'View Online'
+                    cell.font = Font(color='0000FF', underline='single')
+
+        # Mode per Region for Available in Stores
+        mode_map = (
+            final_df.groupby('Regions On Website')['Available in Stores (Count)']
+                    .agg(lambda x: x.mode().iat[0] if not x.mode().empty else None)
+                    .to_dict()
+        )
+
+        grey_fill = PatternFill(start_color='D9D9D9', end_color='D9D9D9', fill_type='solid')
+        yellow_fill = PatternFill(start_color='FFF2CC', end_color='FFF2CC', fill_type='solid')
+        red_fill = PatternFill(start_color='F4CCCC', end_color='F4CCCC', fill_type='solid')
+
+        for row_idx in range(2, ws.max_row + 1):
+            count_val = ws.cell(row=row_idx, column=count_col).value
+            region_val = ws.cell(row=row_idx, column=region_col).value
+            sid = ws.cell(row=row_idx, column=col_indices['Sellable ID']).value
+
+            if count_val == 0:
+                for col in range(1, ws.max_column + 1):
+                    ws.cell(row=row_idx, column=col).fill = grey_fill
+
+            mode_val = mode_map.get(region_val)
+            if mode_val is not None and count_val != mode_val:
+                ws.cell(row=row_idx, column=count_col).fill = yellow_fill
+
+            if sid in multi_price_ids:
+                ws.cell(row=row_idx, column=retail_col).fill = yellow_fill
+
+            image_val = ws.cell(row=row_idx, column=image_col).value
+            brand_val = ws.cell(row=row_idx, column=brand_col).value
+            net_val = ws.cell(row=row_idx, column=net_col).value
+            if image_val == 'No Image Online' or not brand_val or not net_val:
+                for col in range(1, ws.max_column + 1):
+                    ws.cell(row=row_idx, column=col).fill = red_fill
+
         wb.save(output_path)
         print(f"Export successful! File saved to: {output_path}")
         os.startfile(output_path)
