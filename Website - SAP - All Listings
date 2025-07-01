@@ -1,0 +1,94 @@
+WITH
+  -- 1) Only the materials we actually care about
+  ValidMaterials AS (
+    SELECT MATNR
+      FROM MARA
+     WHERE ATTYP IN ('00','02')
+  ),
+
+  -- 2) Listings starting now or in the next 14 days, not yet expired
+  ValidListings AS (
+    SELECT ARTNR
+         , FILIA
+      FROM WLK1
+     WHERE DATAB   <= ADD_DAYS(CURRENT_DATE, 14)
+       AND CURRENT_DATE BETWEEN DATAB AND DATBI
+       AND ARTNR LIKE '000000000%'
+  ),
+
+  -- 3) Store assignments valid today, no GD* stores
+  ValidStores AS (
+    SELECT ASORT
+         , LOCNR
+      FROM WRSZ
+     WHERE CURRENT_DATE BETWEEN DATAB AND DATBI
+       AND LOCNR NOT LIKE 'GD%'
+  ),
+
+  -- 4) Join everything but remove duplicates
+  UniquePairs AS (
+    SELECT DISTINCT
+      VL.ARTNR   AS ProductCode,
+      VS.LOCNR   AS LOCNR
+    FROM ValidListings VL
+      JOIN ValidMaterials VM ON VM.MATNR = VL.ARTNR
+      JOIN ValidStores   VS ON VS.ASORT = VL.FILIA
+  ),
+
+  -- 5) Number each store per product
+  NumberedRows AS (
+    SELECT
+      ProductCode,
+      LOCNR,
+      ROW_NUMBER() OVER (
+        PARTITION BY ProductCode
+        ORDER BY LOCNR
+      ) AS rn
+    FROM UniquePairs
+  ),
+
+  -- 6) Assign into 25‐store buckets (1..28 for up to 700 stores)
+  Bucketed AS (
+    SELECT
+      ProductCode,
+      LOCNR,
+      CEIL( rn / 25.0 ) AS bucket
+    FROM NumberedRows
+  )
+
+SELECT
+  ProductCode,
+
+  STRING_AGG(CASE WHEN bucket =  1 THEN LOCNR END, ',' ORDER BY LOCNR) AS "25 stores",
+  STRING_AGG(CASE WHEN bucket =  2 THEN LOCNR END, ',' ORDER BY LOCNR) AS "50 stores",
+  STRING_AGG(CASE WHEN bucket =  3 THEN LOCNR END, ',' ORDER BY LOCNR) AS "75 stores",
+  STRING_AGG(CASE WHEN bucket =  4 THEN LOCNR END, ',' ORDER BY LOCNR) AS "100 stores",
+  STRING_AGG(CASE WHEN bucket =  5 THEN LOCNR END, ',' ORDER BY LOCNR) AS "125 stores",
+  STRING_AGG(CASE WHEN bucket =  6 THEN LOCNR END, ',' ORDER BY LOCNR) AS "150 stores",
+  STRING_AGG(CASE WHEN bucket =  7 THEN LOCNR END, ',' ORDER BY LOCNR) AS "175 stores",
+  STRING_AGG(CASE WHEN bucket =  8 THEN LOCNR END, ',' ORDER BY LOCNR) AS "200 stores",
+  STRING_AGG(CASE WHEN bucket =  9 THEN LOCNR END, ',' ORDER BY LOCNR) AS "225 stores",
+  STRING_AGG(CASE WHEN bucket = 10 THEN LOCNR END, ',' ORDER BY LOCNR) AS "250 stores",
+  STRING_AGG(CASE WHEN bucket = 11 THEN LOCNR END, ',' ORDER BY LOCNR) AS "275 stores",
+  STRING_AGG(CASE WHEN bucket = 12 THEN LOCNR END, ',' ORDER BY LOCNR) AS "300 stores",
+  STRING_AGG(CASE WHEN bucket = 13 THEN LOCNR END, ',' ORDER BY LOCNR) AS "325 stores",
+  STRING_AGG(CASE WHEN bucket = 14 THEN LOCNR END, ',' ORDER BY LOCNR) AS "350 stores",
+  STRING_AGG(CASE WHEN bucket = 15 THEN LOCNR END, ',' ORDER BY LOCNR) AS "375 stores",
+  STRING_AGG(CASE WHEN bucket = 16 THEN LOCNR END, ',' ORDER BY LOCNR) AS "400 stores",
+  STRING_AGG(CASE WHEN bucket = 17 THEN LOCNR END, ',' ORDER BY LOCNR) AS "425 stores",
+  STRING_AGG(CASE WHEN bucket = 18 THEN LOCNR END, ',' ORDER BY LOCNR) AS "450 stores",
+  STRING_AGG(CASE WHEN bucket = 19 THEN LOCNR END, ',' ORDER BY LOCNR) AS "475 stores",
+  STRING_AGG(CASE WHEN bucket = 20 THEN LOCNR END, ',' ORDER BY LOCNR) AS "500 stores",
+  STRING_AGG(CASE WHEN bucket = 21 THEN LOCNR END, ',' ORDER BY LOCNR) AS "525 stores",
+  STRING_AGG(CASE WHEN bucket = 22 THEN LOCNR END, ',' ORDER BY LOCNR) AS "550 stores",
+  STRING_AGG(CASE WHEN bucket = 23 THEN LOCNR END, ',' ORDER BY LOCNR) AS "575 stores",
+  STRING_AGG(CASE WHEN bucket = 24 THEN LOCNR END, ',' ORDER BY LOCNR) AS "600 stores",
+  STRING_AGG(CASE WHEN bucket = 25 THEN LOCNR END, ',' ORDER BY LOCNR) AS "625 stores",
+  STRING_AGG(CASE WHEN bucket = 26 THEN LOCNR END, ',' ORDER BY LOCNR) AS "650 stores",
+  STRING_AGG(CASE WHEN bucket = 27 THEN LOCNR END, ',' ORDER BY LOCNR) AS "675 stores",
+  STRING_AGG(CASE WHEN bucket = 28 THEN LOCNR END, ',' ORDER BY LOCNR) AS "700 stores"
+
+FROM Bucketed
+WHERE bucket <= 28
+GROUP BY ProductCode
+ORDER BY ProductCode;
