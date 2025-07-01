@@ -1,0 +1,68 @@
+let
+//------------------------------------------------------------------
+// 1.  Fetch the CSV directly
+    FileBinary = Web.Contents(
+        "https://asgportal.sharepoint.com/sites/5999-com-0158/Shared Documents/Website/00 Admin/Reports/Data Tables/AU_product_offer_price_en_AU.csv"
+    ),
+    CsvData = Csv.Document(FileBinary, [Delimiter=",", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),
+    Headers = Table.PromoteHeaders(CsvData, [PromoteAllScalars=true]),
+
+//------------------------------------------------------------------
+// 2.  Keep only the fields we need, THEN type-cast
+    Trimmed = Table.SelectColumns(Headers, {"concrete_sku","merchant_reference","value_gross","is_active"}),
+    Active  = Table.SelectRows(Trimmed, each [is_active] = "1"),
+    Typed   = Table.TransformColumnTypes(                    // only 3 columns to parse
+                Active,
+                { {"concrete_sku", Int64.Type},
+                  {"value_gross" , Int64.Type},
+                  {"merchant_reference", type text} }
+             ),
+    Renamed = Table.RenameColumns(
+                Typed,
+                { {"concrete_sku","Sellable ID"},
+                  {"merchant_reference","Store ID"},
+                  {"value_gross","Retail (cents)"} }
+             ),
+    ToDollars = Table.TransformColumns(Renamed, {{"Retail (cents)", each _/100, type number}}),
+    RetailTbl = Table.RenameColumns(ToDollars, {{"Retail (cents)","Retail"}}),
+
+//------------------------------------------------------------------
+// 3.  Load Region lookup ONCE and turn it into a fast hash-map
+    RegionRaw = Sql.Database(
+                  "5909z0ndbsrvt02","BIRD_IDS_DDS",
+                  [Query="SELECT [AHEAD_Plant_ID]                       AS StoreID,
+                                 [Legacy_Region_Name_Short]          AS Region
+                          FROM dds.INT_OBJ_MD_Store"]
+                ),
+    RegionMap = Record.FromList(RegionRaw[Region], RegionRaw[StoreID]),
+
+//------------------------------------------------------------------
+// 4.  Add Region via O(1) record lookup (no join / no buffer)
+    WithRegion = Table.AddColumn(
+                   RetailTbl, "Region",
+                   each Record.FieldOrDefault(RegionMap, Text.From([Store ID]), null),
+                   type text
+                 ),
+    NonNull     = Table.SelectRows(WithRegion, each [Region] <> null),
+
+//------------------------------------------------------------------
+// 5.  De-duplicate to unique (SKU, Retail, Region) combos BEFORE grouping
+    Deduped = Table.Distinct(NonNull, {"Sellable ID","Retail","Region"}),
+
+//------------------------------------------------------------------
+// 6.  Group and flag “ALL” (now on a tiny table)
+    Expected = {"BRE","DAN","DER","JKT","MIN","PRE","RGY","STP"},
+    Grouped  = Table.Group(
+                 Deduped,
+                 {"Sellable ID","Retail"},
+                 { {"Regions", each
+                        Text.Combine(List.Sort([Region]), ", "), type text }
+                 }
+               ),
+    Flagged  = Table.TransformColumns(
+                 Grouped,
+                 { "Regions", each
+                     if List.Sort(Text.Split(_, ", ")) = Expected then "ALL" else _, type text }
+               )
+in
+    Flagged
