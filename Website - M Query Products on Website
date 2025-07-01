@@ -1,0 +1,58 @@
+let
+    // 1. Load CSV from SharePoint
+    Source = SharePoint.Files(
+        "https://asgportal.sharepoint.com/sites/5999-com-0158",
+        [ApiVersion = 15]
+    ),
+    FilterToCSV = Table.SelectRows(
+        Source,
+        each Text.Contains([Folder Path], "Website/00 Admin/Reports/Data Tables")
+            and [Name] = "publishedOffers.csv"
+    ),
+    CsvFileRow =
+        if Table.IsEmpty(FilterToCSV) then
+            error "publishedOffers.csv not found"
+        else
+            FilterToCSV{0},
+
+    // 2. Parse CSV and promote headers
+    CsvContents = Csv.Document(
+        CsvFileRow[Content],
+        [Delimiter = ",", Encoding = 65001, QuoteStyle = QuoteStyle.Csv]
+    ),
+    #"Promoted Headers" = Table.PromoteHeaders(CsvContents, [PromoteAllScalars = true]),
+
+    // 3. Split “offer reference” into SellableID & StoreID
+    #"Split Reference" = Table.SplitColumn(
+        #"Promoted Headers",
+        "offer reference",
+        Splitter.SplitTextByDelimiter("_", QuoteStyle.Csv),
+        {"offer reference.1", "offer reference.2"}
+    ),
+    #"Renamed Columns" = Table.RenameColumns(
+        #"Split Reference",
+        {{"offer reference.1", "SellableID"}, {"offer reference.2", "StoreID"}}
+    ),
+
+    // 4. Convert SellableID to number & filter out any nulls
+    #"Converted SellableID" = Table.TransformColumns(
+        #"Renamed Columns",
+        {{"SellableID", each try Number.FromText(Text.Trim(_)) otherwise null, Int64.Type}}
+    ),
+    #"Filtered Valid SellableID" = Table.SelectRows(
+        #"Converted SellableID",
+        each [SellableID] <> null
+    ),
+
+    // 5. Drop StoreID (since we only need unique SellableIDs)
+    #"Removed StoreID" = Table.RemoveColumns(
+        #"Filtered Valid SellableID",
+        {"StoreID"}
+    ),
+
+    // 6. Keep only distinct SellableID values
+    #"Unique SellableIDs" = Table.Distinct(
+        #"Removed StoreID"
+    )
+in
+    #"Unique SellableIDs"
