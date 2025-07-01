@@ -1,0 +1,29 @@
+let
+    Source = Sql.Database("5909z0ndbsrvt02", "BIRD_IDS_DDS", [
+        Query = "
+            SELECT p.[Article] as SellableID
+      ,p.[Medium_Description] as Description
+	  ,pg.short_description as BD
+	  ,ph.Long_Description as Hierarchy
+	  ,ph.Short_Description as LongHierarchy
+	  ,cg.Medium_Description as CG
+	  ,scg.Medium_Description as SCG
+      
+  FROM [BIRD_IDS_DDS].[dds].[INT_OBJ_MD_Product] as P
+
+  left join [BIRD_IDS_DDS].[dds].[INT_OBJ_MD_PurchasingGroup] as PG
+
+  on pg.purchasing_group = p.purch_grp_buyer
+
+  left join [BIRD_IDS_DDS].[dds].[INT_OBJ_MD_ProductHierarchy] as PH on
+  ph.Product_Hierarchy = p.Product_Hierarchy
+
+  left join [BIRD_IDS_DDS].[dds].[INT_OBJ_MD_SubCommodityGroup] as SCG on
+  scg.Sub_Commodity_Group = p.Sub_Commodity_Group
+
+  left join	[BIRD_IDS_DDS].[dds].[INT_OBJ_MD_CommodityGroup] as CG on 
+  cg.Commodity_Group = p.Commodity_Group"
+    ]),
+    #"Changed Type" = Table.TransformColumnTypes(Source,{{"SellableID", Int64.Type}})
+in
+    #"Changed Type"
