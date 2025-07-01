@@ -50,4 +50,16 @@ Some scripts reference multiple schemas or require the connection to be set to t
 | WIP - MERCH - Retail Price Change | WIP query reviewing pending retail price changes |
 | WIP - SCM - FT002 not sent | WIP list of FT002 records not sent |
 | Website Dashboard BD SQL Info.txt | Extracts data used on the BD website dashboard |
+| Website - Python SQL Script Test | Example Python script connecting to the BIRD_IDS_D database |
+
+### Python SQL Connection Example
+
+`Website - Python SQL Script Test` is a short Python program that demonstrates how to
+query the `BIRD_IDS_D` database on server `5909z0ndbsrvt02` using `pyodbc` and
+export the results to Excel. The script defines connection parameters for the
+server and database, runs a simple SELECT statement, and writes the output to
+`Store_Region_Export.xlsx`.
+
+This script can be used as a template for Python-based SQL automation when a
+full SQL client is not required.
 
