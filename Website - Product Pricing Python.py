@@ -28,20 +28,23 @@ os.makedirs(output_dir, exist_ok=True)
 
 try:
     # --------------------------------------------------------------
-    # 1. Load CSV and select required columns
-    df = pd.read_csv(
-        csv_path,
-        usecols=['concrete_sku', 'merchant_reference', 'value_gross', 'is_active'],
-        dtype={'merchant_reference': 'string', 'is_active': 'string'}
-    )
-
-    # Allow for missing integers by converting after read
-    df['concrete_sku'] = pd.to_numeric(df['concrete_sku'], errors='coerce').astype('Int64')
-    df['value_gross'] = pd.to_numeric(df['value_gross'], errors='coerce').astype('Int64')
+    # 1. Load CSV and select required columns in manageable chunks
+    CHUNK_SIZE = 100000  # adjust based on available memory
+    chunks = []
+    for chunk in pd.read_csv(
+            csv_path,
+            usecols=['concrete_sku', 'merchant_reference', 'value_gross', 'is_active'],
+            dtype={'merchant_reference': 'string', 'is_active': 'string'},
+            chunksize=CHUNK_SIZE
+    ):
+        chunk['concrete_sku'] = pd.to_numeric(chunk['concrete_sku'], errors='coerce').astype('Int64')
+        chunk['value_gross'] = pd.to_numeric(chunk['value_gross'], errors='coerce').astype('Int64')
+        chunk = chunk[chunk['is_active'] == '1'][['concrete_sku', 'merchant_reference', 'value_gross']]
+        chunks.append(chunk)
+    df = pd.concat(chunks, ignore_index=True)
 
     # --------------------------------------------------------------
-    # 2. Filter active records and rename columns
-    df = df[df['is_active'] == '1'].copy()
+    # 2. Rename columns (records already filtered as active)
     df = df.rename(columns={
         'concrete_sku': 'Sellable ID',
         'merchant_reference': 'Store ID',
