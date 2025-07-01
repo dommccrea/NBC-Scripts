@@ -1,0 +1,50 @@
+import os
+import pyodbc
+import pandas as pd
+
+# Connection parameters
+server = '5909z0ndbsrvt02'
+database = 'BIRD_IDS_DDS'
+
+# Connection string with encryption and trusted certificate
+conn_str = (
+    'DRIVER={ODBC Driver 17 for SQL Server};'
+    f'SERVER={server};'
+    f'DATABASE={database};'
+    'Trusted_Connection=yes;'
+    'Encrypt=yes;'
+    'TrustServerCertificate=yes;'
+)
+
+# Output file path
+output_dir  = r'C:\Users\dmccrea\Documents\Python Scripts'
+output_file = 'Store_Region_Export.xlsx'
+output_path = os.path.join(output_dir, output_file)
+
+# Ensure output directory exists
+os.makedirs(output_dir, exist_ok=True)
+
+# Run query, export to Excel, and open file
+try:
+    conn = pyodbc.connect(conn_str)
+    query = """
+    SELECT  
+        [AHEAD_Plant_ID]           AS StoreID,
+        [Legacy_Region_Name_Short] AS Region 
+    FROM dds.INT_OBJ_MD_Store
+    """
+    df = pd.read_sql(query, conn)
+
+    # Export to Excel (requires openpyxl)
+    df.to_excel(output_path, index=False)
+    print(f"Export successful! File saved to: {output_path}")
+
+    # Automatically open the file (Windows)
+    os.startfile(output_path)
+
+except Exception as e:
+    print("Error:", e)
+
+finally:
+    if 'conn' in locals():
+        conn.close()
