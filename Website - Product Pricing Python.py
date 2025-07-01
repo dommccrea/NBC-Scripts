@@ -91,8 +91,20 @@ try:
     grouped['Regions'] = grouped['Regions'].apply(flag_all)
 
     # --------------------------------------------------------------
+    # 7. Combine Retail and Region pairs per Sellable ID
+    grouped['Retail_Regions'] = grouped.apply(
+        lambda row: f"{row['Retail']:.2f} - {row['Regions']}", axis=1
+    )
+    final_df = (
+        grouped
+        .groupby('Sellable ID')['Retail_Regions']
+        .apply('; '.join)
+        .reset_index(name='Retail - Regions')
+    )
+
+    # --------------------------------------------------------------
     # Export results to Excel
-    grouped.to_excel(output_path, index=False)
+    final_df.to_excel(output_path, index=False)
     print(f"Export successful! File saved to: {output_path}")
 
     # Automatically open the file (Windows)
