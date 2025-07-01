@@ -11,6 +11,10 @@ These scripts were created for data analysis and reporting purposes. They query 
 1. Connect to the business database using your preferred SQL client (e.g. DBeaver or SQL Server Management Studio).
 2. Ensure you have the required permissions to read from the underlying tables. Most scripts expect access to product, store, and contract tables.
 3. Open the desired script file from this repository and execute it within your SQL client.
+4. For Python-based queries you can run `Website - Python SQL Script Test`,
+   which connects to server `5909z0ndbsrvt02` and the `BIRD_IDS_D` database using
+   ODBC. This script exports query results to Excel and can be adapted for other
+   SQL statements.
 
 Some scripts reference multiple schemas or require the connection to be set to the correct database. Adjust any schema references if needed before running.
 
@@ -50,4 +54,5 @@ Some scripts reference multiple schemas or require the connection to be set to t
 | WIP - MERCH - Retail Price Change | WIP query reviewing pending retail price changes |
 | WIP - SCM - FT002 not sent | WIP list of FT002 records not sent |
 | Website Dashboard BD SQL Info.txt | Extracts data used on the BD website dashboard |
+| Website - Python SQL Script Test | Example Python script using ODBC to query BIRD_IDS_D on server 5909z0ndbsrvt02 and export results to Excel |
 
