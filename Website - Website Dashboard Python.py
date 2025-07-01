@@ -8,6 +8,8 @@ from openpyxl.styles.differential import DifferentialStyle
 from openpyxl.formatting.rule import Rule
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.dataframe import dataframe_to_rows
+from datetime import datetime
+from rapidfuzz import fuzz
 
 # Paths to CSV files
 BASE_DIR = r'C:\Users\dmccrea\Documents\Python Scripts\New folder'
@@ -120,6 +122,9 @@ def load_product_catalog():
         'product_class': 'Hierarchy',
         'legal_disclaimer': 'Legal Disclaimer'
     })
+
+    # Exclude products not active online
+    df = df[df['Online Active'] == '1'].copy()
 
     df = df[[
         'Sellable ID', 'Online Active', 'Product Name', 'Product Description',
@@ -287,7 +292,8 @@ def build_dashboard(df_catalog, df_location, df_gp, df_price, df_images):
 
 
 def main():
-    output_path = os.path.join(BASE_DIR, 'Website_Dashboard_Output.xlsx')
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    output_path = os.path.join(BASE_DIR, f'Website_Dashboard_Output_{timestamp}.xlsx')
     os.makedirs(BASE_DIR, exist_ok=True)
     try:
         conn = pyodbc.connect(CONN_STR)
@@ -307,6 +313,21 @@ def main():
             lambda r: r['Available in Stores (Count)'] != mode_map.get(r['Regions On Website']),
             axis=1
         )
+
+        # Calculate fuzzy match score between website and SAP names
+        final_df['Fuzzy Score'] = final_df.apply(
+            lambda r: fuzz.ratio(
+                (r['Website Product Name'] or '').lower(),
+                (r['SAP Product Name'] or '').lower()
+            ),
+            axis=1
+        )
+        mismatch_df = final_df[
+            final_df['Fuzzy Score'] < 30
+        ][['SAP BD', 'Sellable ID', 'Website Product Name', 'SAP Product Name', 'Fuzzy Score']]
+
+        # Remove helper column from main output
+        final_df = final_df.drop(columns=['Fuzzy Score'])
 
          # Append helper column for formatting
         column_order = [
@@ -414,6 +435,13 @@ def main():
         for r in dataframe_to_rows(pivot_df, index=False, header=True):
             piv_ws.append(r)
         piv_ws.auto_filter.ref = piv_ws.dimensions
+
+        # Sheet of name mismatches
+        if not mismatch_df.empty:
+            mis_ws = wb.create_sheet('Fuzzy Mismatch')
+            for r in dataframe_to_rows(mismatch_df, index=False, header=True):
+                mis_ws.append(r)
+            mis_ws.auto_filter.ref = mis_ws.dimensions
 
         wb.save(output_path)
         print(f"Export successful! File saved to: {output_path}")
