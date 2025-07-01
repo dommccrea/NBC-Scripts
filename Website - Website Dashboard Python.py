@@ -308,8 +308,8 @@ def main():
             axis=1
         )
 
-        # Append helper column for formatting
-        final_df = final_df[
+         # Append helper column for formatting
+        column_order = [
             'SAP BD', 'Sellable ID', 'Website Product Name', 'SAP Product Name',
             'Regions On Website', 'Available in Stores (Count)',
             'Retail by Region (updated weekly)', 'Product Description',
@@ -318,6 +318,7 @@ def main():
             'Brand', 'Net Content', 'Product Link',
             'Multiple Prices', 'Deviation'
         ]
+        final_df = final_df[column_order]
 
         final_df.to_excel(output_path, index=False)
 
