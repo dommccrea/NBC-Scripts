@@ -2,6 +2,12 @@ import os
 import pandas as pd
 import pyodbc
 from html import unescape
+from openpyxl import load_workbook
+from openpyxl.styles import PatternFill, Font, Alignment
+from openpyxl.styles.differential import DifferentialStyle
+from openpyxl.formatting.rule import Rule
+from openpyxl.utils import get_column_letter
+from openpyxl.utils.dataframe import dataframe_to_rows
 
 # Paths to CSV files
 BASE_DIR = r'C:\Users\dmccrea\Documents\Python Scripts\New folder'
@@ -232,8 +238,16 @@ def build_dashboard(df_catalog, df_location, df_gp, df_price, df_images):
         else:
             region_label = ''
         price_pairs = grp[['Product Pricing.Regions', 'Product Pricing.Retail']].dropna()
-        price_pairs = price_pairs.drop_duplicates().sort_values(['Product Pricing.Regions', 'Product Pricing.Retail'])
-        retail_by_region = ', '.join(f"{r}: {p}" for r, p in zip(price_pairs['Product Pricing.Regions'], price_pairs['Product Pricing.Retail']))
+        price_pairs = price_pairs.drop_duplicates().sort_values([
+            'Product Pricing.Regions', 'Product Pricing.Retail'
+        ])
+        retail_by_region = ', '.join(
+            f"{r}: {p}" for r, p in zip(
+                price_pairs['Product Pricing.Regions'],
+                price_pairs['Product Pricing.Retail']
+            )
+        )
+        multiple_prices = price_pairs['Product Pricing.Retail'].nunique() > 1
         grouped.append({
             'Sellable ID': sid,
             'Product Name': first_row['Product Name'],
@@ -250,19 +264,25 @@ def build_dashboard(df_catalog, df_location, df_gp, df_price, df_images):
             'Product Link': first_row['Product Link'],
             'Available in Stores (Count)': first_row['Available in Stores (Count)'],
             'Regions On Website': region_label,
-            'Retail by Region': retail_by_region
+            'Retail by Region': retail_by_region,
+            'Multiple Prices': multiple_prices
         })
 
     out = pd.DataFrame(grouped)
-    out = out.rename(columns={'Product Name': 'Website Product Name', 'SAP Description': 'SAP Product Name'})
+    out = out.rename(columns={
+        'Product Name': 'Website Product Name',
+        'SAP Description': 'SAP Product Name',
+        'Retail by Region': 'Retail by Region (updated weekly)'
+    })
     out = out[[
         'SAP BD', 'Sellable ID', 'Website Product Name', 'SAP Product Name',
-        'Available in Stores (Count)', 'Regions On Website', 'Retail by Region',
-        'Hierarchy', 'SAP Commodity Group', 'SAP Sub Commodity Group', 'Brand',
-        'Net Content', 'Product Description', 'Legal Disclaimer', 'Image Status', 'Product Link'
+        'Regions On Website', 'Available in Stores (Count)',
+        'Retail by Region (updated weekly)', 'Product Description',
+        'Legal Disclaimer', 'Image Status', 'Hierarchy',
+        'SAP Commodity Group', 'SAP Sub Commodity Group',
+        'Brand', 'Net Content', 'Product Link', 'Multiple Prices'
     ]]
     out['Image Status'] = out['Image Status'].fillna('No Image Online')
-    out = out.rename(columns={'Retail by Region': 'Retail by Region (updated weekly)'})
     return out
 
 
@@ -279,13 +299,109 @@ def main():
         gp_info = load_general_product_info(conn)
         images_df = load_product_images()
         final_df = build_dashboard(catalog, location_data, gp_info, pricing_data, images_df)
+
+        # Determine most common store count per region combination
+        mode_map = (final_df.groupby('Regions On Website')['Available in Stores (Count)']
+                    .agg(lambda x: x.mode().iat[0] if not x.mode().empty else None))
+        final_df['Deviation'] = final_df.apply(
+            lambda r: r['Available in Stores (Count)'] != mode_map.get(r['Regions On Website']),
+            axis=1
+        )
+
+        # Append helper column for formatting
+        final_df = final_df[
+            'SAP BD', 'Sellable ID', 'Website Product Name', 'SAP Product Name',
+            'Regions On Website', 'Available in Stores (Count)',
+            'Retail by Region (updated weekly)', 'Product Description',
+            'Legal Disclaimer', 'Image Status', 'Hierarchy',
+            'SAP Commodity Group', 'SAP Sub Commodity Group',
+            'Brand', 'Net Content', 'Product Link',
+            'Multiple Prices', 'Deviation'
+        ]
+
         final_df.to_excel(output_path, index=False)
 
-        # Apply basic filters to the worksheet
-        from openpyxl import load_workbook
         wb = load_workbook(output_path)
         ws = wb.active
+
+        # Auto filter
         ws.auto_filter.ref = ws.dimensions
+
+        # Column widths and wrap text
+        width_map = {
+            'A': 16,  # SAP BD
+            'C': 35,  # Website Product Name
+            'H': 86,  # Product Description
+            'I': 71,  # Legal Disclaimer
+        }
+        for col, width in width_map.items():
+            ws.column_dimensions[col].width = width
+        for cell in ws['H']:
+            cell.alignment = Alignment(wrap_text=True)
+
+        # Grey out rows with no stores
+        grey_fill = PatternFill(start_color='CCCCCC', end_color='CCCCCC', fill_type='solid')
+        rule = Rule(type='expression', dxf=DifferentialStyle(fill=grey_fill))
+        avail_col = get_column_letter([c.value for c in ws[1]].index('Available in Stores (Count)') + 1)
+        rule.formula = [f"${avail_col}2=0"]
+        ws.conditional_formatting.add(f"A2:{get_column_letter(ws.max_column)}{ws.max_row}", rule)
+
+        # Highlight counts deviating from mode
+        yellow_fill = PatternFill(start_color='FFFACD', end_color='FFFACD', fill_type='solid')
+        dev_col = get_column_letter([c.value for c in ws[1]].index('Deviation') + 1)
+        rule = Rule(type='expression', dxf=DifferentialStyle(fill=yellow_fill))
+        rule.formula = [f"${dev_col}2"]
+        count_col = get_column_letter([c.value for c in ws[1]].index('Available in Stores (Count)') + 1)
+        ws.conditional_formatting.add(f"{count_col}2:{count_col}{ws.max_row}", rule)
+
+        # Highlight multiple prices
+        multi_col = get_column_letter([c.value for c in ws[1]].index('Multiple Prices') + 1)
+        rule = Rule(type='expression', dxf=DifferentialStyle(fill=yellow_fill))
+        rule.formula = [f"${multi_col}2"]
+        price_col = get_column_letter([c.value for c in ws[1]].index('Retail by Region (updated weekly)') + 1)
+        ws.conditional_formatting.add(f"{price_col}2:{price_col}{ws.max_row}", rule)
+
+        # Red warnings
+        red_fill = PatternFill(start_color='FFCCCC', end_color='FFCCCC', fill_type='solid')
+        img_col = get_column_letter([c.value for c in ws[1]].index('Image Status') + 1)
+        brand_col = get_column_letter([c.value for c in ws[1]].index('Brand') + 1)
+        net_col = get_column_letter([c.value for c in ws[1]].index('Net Content') + 1)
+        rule = Rule(type='expression', dxf=DifferentialStyle(fill=red_fill))
+        rule.formula = [f"${img_col}2=\"No Image Online\""]
+        ws.conditional_formatting.add(f"{img_col}2:{img_col}{ws.max_row}", rule)
+        rule = Rule(type='expression', dxf=DifferentialStyle(fill=red_fill))
+        rule.formula = [f"LEN(${brand_col}2)=0"]
+        ws.conditional_formatting.add(f"{brand_col}2:{brand_col}{ws.max_row}", rule)
+        rule = Rule(type='expression', dxf=DifferentialStyle(fill=red_fill))
+        rule.formula = [f"LEN(${net_col}2)=0"]
+        ws.conditional_formatting.add(f"{net_col}2:{net_col}{ws.max_row}", rule)
+
+        # Hyperlinks
+        link_col = get_column_letter([c.value for c in ws[1]].index('Product Link') + 1)
+        col_num = [c.value for c in ws[1]].index('Product Link') + 1
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row,
+                                min_col=col_num, max_col=col_num):
+            for cell in row:
+                if cell.value:
+                    cell.hyperlink = cell.value
+                    cell.value = 'View Online'
+                    cell.font = Font(color='0000FF', underline='single')
+
+        # Hide helper columns
+        ws.column_dimensions[dev_col].hidden = True
+        ws.column_dimensions[multi_col].hidden = True
+
+        # Create pivot summary sheet
+        pivot_df = final_df[final_df['Available in Stores (Count)'] > 0].groupby('SAP BD').agg(
+            Product_Count=('Sellable ID', 'nunique'),
+            No_Image_Count=('Image Status', lambda x: (x == 'No Image Online').sum())
+        ).reset_index()
+
+        piv_ws = wb.create_sheet('BD Pivot')
+        for r in dataframe_to_rows(pivot_df, index=False, header=True):
+            piv_ws.append(r)
+        piv_ws.auto_filter.ref = piv_ws.dimensions
+
         wb.save(output_path)
         print(f"Export successful! File saved to: {output_path}")
         os.startfile(output_path)
