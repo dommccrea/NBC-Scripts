@@ -102,15 +102,15 @@ FROM MARA
 	AND MVKE.VKORG = 5998
 	AND MVKE.VTWEG = 10
 
-	INNER JOIN
-		INOB ON
-			INOB.OBJEK = MARA.MATNR AND
-			INOB.OBTAB = 'MARAT' AND
-			INOB.KLART = '026'
-	INNER JOIN
-		AUSP ON
-			INOB.CUOBJ = AUSP.OBJEK AND
-			AUSP.ATINN IN ('0000009663', '0000007846')
+        LEFT JOIN
+                INOB ON
+                        INOB.OBJEK = MARA.MATNR AND
+                        INOB.OBTAB = 'MARAT' AND
+                        INOB.KLART = '026'
+        LEFT JOIN
+                AUSP ON
+                        INOB.CUOBJ = AUSP.OBJEK AND
+                        AUSP.ATINN IN ('0000009663', '0000007846')
 
 	LEFT JOIN 
 		MAST ON 
