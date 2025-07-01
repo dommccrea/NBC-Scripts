@@ -55,4 +55,5 @@ Some scripts reference multiple schemas or require the connection to be set to t
 | WIP - SCM - FT002 not sent | WIP list of FT002 records not sent |
 | Website Dashboard BD SQL Info.txt | Extracts data used on the BD website dashboard |
 | Website - Python SQL Script Test | Example Python script using ODBC to query BIRD_IDS_D on server 5909z0ndbsrvt02 and export results to Excel |
+| Website - Website Dashboard HTML.py | Generates an interactive offline dashboard as an HTML file |
 
