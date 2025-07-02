@@ -16,7 +16,7 @@ BASE_DIR = r'C:\Users\dmccrea\Documents\Python Scripts\New folder'
 PRICING_CSV = os.path.join(BASE_DIR, 'AU_product_offer_price_en_AU.csv')
 PRODUCTS_CSV = os.path.join(BASE_DIR, 'AU_products_en_AU.csv')
 IMAGES_CSV = os.path.join(BASE_DIR, 'AU_product_image_en_AU.csv')
-SAP_LISTINGS_XLSX = os.path.join(BASE_DIR, 'Website - SAP - All Listings.xlsx')
+SAP_LISTINGS_XLSX = os.path.join(BASE_DIR, 'SAP Listings.xlsx')
 
 # SQL Server connection parameters
 SERVER = '5909z0ndbsrvt02'
@@ -31,6 +31,16 @@ CONN_STR = (
 )
 
 EXPECTED_REGIONS = ['BRE', 'DAN', 'DER', 'JKT', 'MIN', 'PRE', 'RGY', 'STP']
+
+
+def check_file(path, description):
+    """Print whether the given file path exists."""
+    if os.path.exists(path):
+        print(f"{description} found: {path}")
+        return True
+    else:
+        print(f"{description} NOT FOUND: {path}")
+        return False
 
 
 def load_region_lookup(conn):
@@ -326,6 +336,11 @@ def main():
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     output_path = os.path.join(BASE_DIR, f'Website_Dashboard_Output_{timestamp}.xlsx')
     os.makedirs(BASE_DIR, exist_ok=True)
+    # Check that required input files are present
+    check_file(PRICING_CSV, 'Pricing CSV')
+    check_file(PRODUCTS_CSV, 'Products CSV')
+    check_file(IMAGES_CSV, 'Images CSV')
+    check_file(SAP_LISTINGS_XLSX, 'SAP listings file')
     try:
         conn = pyodbc.connect(CONN_STR)
         region_map = load_region_lookup(conn)
