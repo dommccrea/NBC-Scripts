@@ -8,6 +8,7 @@ from openpyxl.styles.differential import DifferentialStyle
 from openpyxl.formatting.rule import Rule
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.dataframe import dataframe_to_rows
+from openpyxl.worksheet.table import Table, TableStyleInfo
 from datetime import datetime
 from rapidfuzz import fuzz
 
@@ -216,7 +217,7 @@ def load_sap_store_counts():
     df['SAP_Count'] = df['StoreList'].apply(lambda x: len(set(x)))
     df['StoreSample'] = df['StoreList'].apply(lambda x: ', '.join(x[:10]))
     df['SellableID'] = pd.to_numeric(df['ProductCode'].astype(str).str.lstrip('0'), errors='coerce').astype('Int64')
-    return df[['SellableID', 'SAP_Count', 'StoreSample']]
+    return df[['SellableID', 'SAP_Count', 'StoreSample', 'StoreList']]
 
 
 def build_dashboard(df_catalog, df_location, df_gp, df_price, df_images):
@@ -345,6 +346,11 @@ def main():
         conn = pyodbc.connect(CONN_STR)
         region_map = load_region_lookup(conn)
         pricing_base = load_pricing_data()
+        website_store_map = (
+            pricing_base.groupby('SellableID')['StoreID']
+            .apply(lambda x: sorted(set(x.astype(str).str.lstrip('0'))))
+            .to_dict()
+        )
         pricing_data = compute_product_pricing(pricing_base, region_map)
         location_data = compute_product_location(pricing_base, region_map)
         catalog = load_product_catalog()
@@ -353,21 +359,37 @@ def main():
         final_df = build_dashboard(catalog, location_data, gp_info, pricing_data, images_df)
 
         sap_counts = load_sap_store_counts()
+        sap_store_map = dict(zip(sap_counts['SellableID'], sap_counts['StoreList']))
         final_df = final_df.merge(
             sap_counts,
             left_on='Sellable ID',
             right_on='SellableID',
             how='left'
         ).drop(columns=['SellableID'])
-        final_df = final_df.rename(columns={'SAP_Count': 'Stores Listed in SAP', 'StoreSample': 'SAP Store Sample'})
+        final_df = final_df.rename(columns={
+            'SAP_Count': 'Stores Listed in SAP',
+            'StoreSample': 'SAP Store Sample',
+            'StoreList': 'SAP Store List'
+        })
 
         mismatch_counts = final_df[
             final_df['Stores Listed in SAP'] != final_df['Available in Stores (Count)']
         ][[
             'SAP BD', 'Sellable ID', 'Available in Stores (Count)',
-            'Stores Listed in SAP', 'SAP Store Sample'
+            'Stores Listed in SAP', 'SAP Store List'
         ]]
-        final_df = final_df.drop(columns=['SAP Store Sample'])
+
+        def diff_list(a, b):
+            return ', '.join(list(a - b)[:5])
+
+        mismatch_counts['Stores on Website Without Listing (up to 5)'] = mismatch_counts['Sellable ID'].apply(
+            lambda sid: diff_list(set(website_store_map.get(sid, [])), set(sap_store_map.get(sid, [])))
+        )
+        mismatch_counts['Stores Listed without Product Available Online (up to 5)'] = mismatch_counts['Sellable ID'].apply(
+            lambda sid: diff_list(set(sap_store_map.get(sid, [])), set(website_store_map.get(sid, [])))
+        )
+        mismatch_counts = mismatch_counts.drop(columns=['SAP Store List'])
+        final_df = final_df.drop(columns=['SAP Store Sample', 'SAP Store List'])
 
         # Determine most common store count per region combination
         mode_map = (final_df.groupby('Regions On Website')['Available in Stores (Count)']
@@ -409,8 +431,16 @@ def main():
         wb = load_workbook(output_path)
         ws = wb.active
 
+        ws.title = 'Website Dashboard'
+
         # Auto filter
         ws.auto_filter.ref = ws.dimensions
+
+        # Add table for easier filtering
+        tab = Table(displayName='WebsiteDashboard', ref=ws.dimensions)
+        style = TableStyleInfo(name='TableStyleMedium9', showRowStripes=True)
+        tab.tableStyleInfo = style
+        ws.add_table(tab)
 
         # Column widths and wrap text
         width_map = {
@@ -508,16 +538,21 @@ def main():
 
         # Sheet of name mismatches
         if not mismatch_df.empty:
-            mis_ws = wb.create_sheet('Fuzzy Mismatch')
+            mis_ws = wb.create_sheet('Name Mismatch')
             for r in dataframe_to_rows(mismatch_df, index=False, header=True):
                 mis_ws.append(r)
             mis_ws.auto_filter.ref = mis_ws.dimensions
+            width_map = {'A':20, 'B':15, 'C':40, 'D':40, 'E':15}
+            for col, width in width_map.items():
+                mis_ws.column_dimensions[col].width = width
 
         if not mismatch_counts.empty:
-            samp_ws = wb.create_sheet('Mismatch Samples')
+            samp_ws = wb.create_sheet('Listing Discrepancy')
             for r in dataframe_to_rows(mismatch_counts, index=False, header=True):
                 samp_ws.append(r)
             samp_ws.auto_filter.ref = samp_ws.dimensions
+            for col in range(1, samp_ws.max_column + 1):
+                samp_ws.column_dimensions[get_column_letter(col)].width = 20
 
         wb.save(output_path)
         print(f"Export successful! File saved to: {output_path}")
