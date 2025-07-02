@@ -1,0 +1,96 @@
+SELECT DISTINCT
+	mvke.ZZPRGRP||' - '||T.EKNAM AS BUYING_DIRECTOR,
+      RIGHT (MARA.MATNR, 6) AS Display_ID,
+      	MAKT_EN.MAKTX AS DESCRIPTION_EN,
+	MARC.WERKS AS DC, MARC.MMSTA AS DC_STATUS,
+      LEFT(STORE.FILIA,7) Master_Assortment,
+      left(wrst.name1,25) Assortment_Description,
+	CASE WHEN DC.FILIA IS NOT NULL THEN 'x' ELSE '' END AS DC_LISTING,
+	CASE WHEN STORE.FILIA IS NOT NULL THEN 'x' ELSE '' END AS STORE_LISTING,
+	CASE WHEN X.EBELN IS NOT NULL THEN 'x' ELSE '' END AS Active_Contract,
+      right(mara.MATKL,2)|| ' - '|| WRF_MATGRP_MD4T.LTEXT ASCG,
+      case when '' = '' then '' else '' end Comment_for_BA
+
+FROM
+	MARA
+
+LEFT JOIN
+      WRF_MATGRP_MD4T ON
+            WRF_MATGRP_MD4T.NODE = MARA.MATKL AND
+            WRF_MATGRP_MD4T.SPRAS = 'E'
+
+INNER JOIN
+	INOB ON
+		INOB.OBJEK = MARA.MATNR AND
+		INOB.OBTAB = 'MARAT' AND
+		INOB.KLART = '026'
+
+INNER JOIN
+	AUSP ON
+		INOB.CUOBJ = AUSP.OBJEK AND
+		AUSP.ATINN IN ('0000009663', '0000007846')
+
+INNER JOIN
+	MVKE ON
+		MVKE.MATNR = MARA.MATNR AND
+		MVKE.VKORG = '5998' AND
+		MVKE.VTWEG = '10'
+
+INNER JOIN
+	MARC ON
+		MARC.MATNR = MARA.MATNR AND
+		(MARC.WERKS IN ('GD01', 'GD02', 'GD04', 'GD05', 'GD06', 'GD08') OR
+		(MARC.WERKS IN ('GD03', 'GD07') AND MVKE.ZZPRGRP NOT IN ('G08', 'G09')))
+
+LEFT JOIN
+	WLK1 DC ON
+		DC.ARTNR = MARA.MATNR AND
+		DC.DATBI >= current_date AND
+		DC.FILIA = MARC.WERKS                              /**--Update Region Here**/
+
+
+LEFT JOIN
+	WLK1 STORE ON
+		STORE.ARTNR = MARA.MATNR AND
+		STORE.DATBI > current_date AND
+		MARC.WERKS = CASE WHEN STORE.FILIA like '%MIN-%' THEN 'GD01'
+			WHEN STORE.FILIA like '%DER-%' THEN 'GD02'
+                        WHEN STORE.FILIA like '%STP-%' THEN 'GD03'
+                        WHEN STORE.FILIA like '%PRE-%' THEN 'GD04'
+                        WHEN STORE.FILIA like '%DAN-%' THEN 'GD05'
+                        WHEN STORE.FILIA like '%BRE-%' THEN 'GD06'
+                        WHEN STORE.FILIA like '%RGY-%' THEN 'GD07'
+                        WHEN STORE.FILIA like '%JKT-%' THEN 'GD08' END AND STORE.FILIA NOT LIKE '%DUMY%'
+
+
+	
+LEFT JOIN
+	(SELECT DISTINCT
+		EKPO.MATNR, EKPO.WERKS, EKPO.EBELN, EKKO.KDATB,EKKO.KDATE,EKPO.LOEKZ
+               FROM EKPO
+               INNER JOIN EKKO ON EKKO.EBELN = EKPO.EBELN AND EKKO.BSTYP = 'K' AND (EKKO.KDATB <= CURRENT_DATE AND EKKO.KDATE >= CURRENT_DATE)) X
+	ON X.MATNR = MARA.MATNR AND X.WERKS = MARC.WERKS AND X.LOEKZ !='L'
+
+
+LEFT JOIN
+	MAKT MAKT_EN ON
+		MAKT_EN.MATNR = MARA.MATNR AND
+		MAKT_EN.SPRAS = 'E'
+
+LEFT JOIN
+	T024 T ON
+		T.EKGRP = MVKE.ZZPRGRP
+
+LEFT JOIN
+        WAKP on
+    wakp.artnr = mara.matnr
+
+left join wrst on
+    wrst.asort = store.filia
+    and wrst.spras = 'E'
+	
+WHERE
+	AUSP.OBJEK IS NOT NULL AND
+      store.filia not like '%000%' AND
+	MARA.ATTYP = 12 AND
+      marc.mmsta = '11'

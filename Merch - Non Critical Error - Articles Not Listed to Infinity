@@ -1,0 +1,77 @@
+Select        
+        RIGHT(WLK1.STRNR,6) AS DisplayID,
+        makt.maktx AS Description, 
+        marc.mmsta as DC_Status, 
+        WLK1.FILIA AS Assortment,     
+        WLK1.DATBI AS Listing_End_Date,
+        mvke.ZZPRGRP || ' - ' || T.EKNAM AS BUYING_DIRECTOR,
+        LEFT(mara.MATKL,4) || ' - ' || WRF_MATGRP_MD2T.LTEXT AS CG,
+        RIGHT(mara.MATKL,2)|| ' - '|| WRF_MATGRP_MD4T.LTEXT AS ASCG
+      
+    FROM WLK1
+
+    LEFT JOIN 
+    mara ON 
+    WLK1.STRNR = mara.matnr
+
+    left join 
+    wrst on 
+    wrst.asort = WLK1.FILIA
+    and wrst.spras = 'E'
+    
+     
+    LEFT JOIN 
+    marc ON 
+    marc.matnr = WLK1.STRNR 
+    AND marc.werks =  WLK1.FILIA
+
+    LEFT JOIN 
+    WRF_MATGRP_MD2T ON 
+    WRF_MATGRP_MD2T.NODE = LEFT(mara.MATKL,4)
+    AND WRF_MATGRP_MD2T.SPRAS = 'E'
+
+    LEFT JOIN 
+    WRF_MATGRP_MD4T ON 
+    WRF_MATGRP_MD4T.NODE = mara.MATKL
+    AND WRF_MATGRP_MD4T.SPRAS = 'E'
+
+    LEFT JOIN 
+    MVKE ON 
+    MVKE.MATNR = MARA.MATNR 
+    AND MVKE.VKORG = '5998' 
+    AND MVKE.VTWEG = '10'
+
+    LEFT JOIN 
+    MAKT ON 
+    MAKT.MATNR = MARA.MATNR 
+    AND MAKT.SPRAS = 'E'
+
+    LEFT JOIN 
+    T024 T ON 
+    T.EKGRP = MVKE.ZZPRGRP
+
+    WHERE wrst.spras = 'E'
+    and WLK1.FILIA NOT LIKE '%000%'
+    and WLK1.FILIA NOT LIKE '%99%'
+    and WLK1.FILIA NOT LIKE '%AU-%'
+    and WLK1.FILIA NOT LIKE '%DUMY%'
+    and WLK1.DATBI > add_days (current_date, 1)
+    and WLK1.DATBI NOT LIKE '%9999%'
+    and RIGHT(LEFT(MVKE.PRODH, 5),1) NOT LIKE '2'
+   
+  
+
+    GROUP BY
+        RIGHT(WLK1.STRNR,6),
+        makt.maktx,
+        marc.mmsta,
+        MARC.WERKS,
+        WLK1.FILIA,
+        wrst.name1,
+        WLK1.DATBI,
+        mvke.ZZPRGRP || ' - ' || T.EKNAM,
+        LEFT(mara.MATKL,4) || ' - ' || WRF_MATGRP_MD2T.LTEXT,
+        right(mara.MATKL,2)|| ' - '|| WRF_MATGRP_MD4T.LTEXT
+
+
+ORDER BY RIGHT(WLK1.STRNR,6), WLK1.FILIA

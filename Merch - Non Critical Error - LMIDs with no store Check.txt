@@ -1,0 +1,45 @@
+select distinct
+
+malg.laygr layout_module
+,left(wrst.name1,14) Assortment
+
+from malg
+
+/* Material Description */
+    left join MAKT
+    on MAKT.MATNR = MALG.MATNR
+    and MAKT.SPRAS = 'E'
+
+/*Assortment Description*/
+
+    left join wrst
+    on wrst.ASORT = malg.laygr
+    and wrst.spras = 'E'
+
+/*WLMV join*/
+    left join wlmv
+    on wlmv.laygr = malg.laygr
+    and wlmv.LAYMOD_VER = malg.lmver
+
+/*Store Listing Join*/
+    left join wlk1
+    on wlk1.artnr = malg.matnr
+    and wlk1.filia = malg.laygr
+    and wlk1.datbi >= current_date
+
+/*store join*/
+    left join wrsz
+    on wrsz.asort = malg.laygr
+    and wrsz.datbi >= current_date
+
+where
+wrsz.locnr is null
+and wlmv.LM_DATE_FR >= current_date
+and (malg.laygr like 'BRE%'
+or malg.laygr like 'RGY%'
+or malg.laygr like 'STP%'
+or malg.laygr like 'JKT%'
+or malg.laygr like 'MIN%'
+or malg.laygr like 'PRE%'
+or malg.laygr like 'DER%'
+or malg.laygr like 'DAN%')
