@@ -15,7 +15,7 @@ These scripts were created for data analysis and reporting purposes. They query 
    which connects to server `5909z0ndbsrvt02` and the `BIRD_IDS_D` database using
    ODBC. This script exports query results to Excel and can be adapted for other
    SQL statements.
-5. To extract online listings you must run `Website - SAP - All Listings` in SAP HANA Studio and export the results to an `.xlsx` file.
+5. To extract online listings you must run `Website - SAP - All Listings` in SAP HANA Studio and export the results to an `.xlsx` file named `SAP Listings.xlsx`.
 
 Some scripts reference multiple schemas or require the connection to be set to the correct database. Adjust any schema references if needed before running.
 
@@ -57,7 +57,7 @@ Some scripts reference multiple schemas or require the connection to be set to t
 | Website Dashboard BD SQL Info.txt | Extracts data used on the BD website dashboard |
 | Website - Python SQL Script Test | Example Python script using ODBC to query BIRD_IDS_D on server 5909z0ndbsrvt02 and export results to Excel |
 | Website - Website Dashboard HTML.py | Generates an interactive offline dashboard as an HTML file |
-| Website - Website Dashboard Python.py | Creates the Excel dashboard with product, location, and price data |
+| Website - Website Dashboard Python.py | Creates the Excel dashboard with product, location, and price data. Expects `SAP Listings.xlsx` in the same folder |
 | Website - Product Pricing Python.py | Generates region-based pricing summary from CSV inputs |
 | Website - SAP - All Listings | SAP HANA SQL listing all store assignments for online products |
 | Website - SAP Export For Grant - E41.txt | SAP HANA query providing E41 export data for Grant |

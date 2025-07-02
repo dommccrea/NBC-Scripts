@@ -16,6 +16,7 @@ BASE_DIR = r'C:\Users\dmccrea\Documents\Python Scripts\New folder'
 PRICING_CSV = os.path.join(BASE_DIR, 'AU_product_offer_price_en_AU.csv')
 PRODUCTS_CSV = os.path.join(BASE_DIR, 'AU_products_en_AU.csv')
 IMAGES_CSV = os.path.join(BASE_DIR, 'AU_product_image_en_AU.csv')
+SAP_LISTINGS_XLSX = os.path.join(BASE_DIR, 'SAP Listings.xlsx')
 
 # SQL Server connection parameters
 SERVER = '5909z0ndbsrvt02'
@@ -30,6 +31,16 @@ CONN_STR = (
 )
 
 EXPECTED_REGIONS = ['BRE', 'DAN', 'DER', 'JKT', 'MIN', 'PRE', 'RGY', 'STP']
+
+
+def check_file(path, description):
+    """Print whether the given file path exists."""
+    if os.path.exists(path):
+        print(f"{description} found: {path}")
+        return True
+    else:
+        print(f"{description} NOT FOUND: {path}")
+        return False
 
 
 def load_region_lookup(conn):
@@ -178,6 +189,36 @@ def load_product_images():
     return df[['SellableID']].dropna()
 
 
+def load_sap_store_counts():
+    """Return DataFrame with SAP store count and sample stores per sellable ID."""
+    if not os.path.exists(SAP_LISTINGS_XLSX):
+        return pd.DataFrame(columns=['SellableID', 'SAP_Count', 'StoreSample'])
+
+    df = pd.read_excel(SAP_LISTINGS_XLSX, dtype=str)
+    df.columns = [str(c).strip() for c in df.columns]
+    if not df.columns.empty:
+        df.rename(columns={df.columns[0]: 'ProductCode'}, inplace=True)
+
+    store_cols = [c for c in df.columns if 'store' in c.lower()]
+    if not store_cols:
+        return pd.DataFrame(columns=['SellableID', 'SAP_Count', 'StoreSample'])
+
+    def parse_cell(val):
+        if pd.isna(val):
+            return []
+        val = str(val).replace('\n', ',').replace(';', ',')
+        return [s.strip().lstrip('0') for s in val.split(',') if s.strip()]
+
+    df['StoreList'] = (
+        df[store_cols]
+        .apply(lambda r: [s for col in store_cols for s in parse_cell(r[col])], axis=1)
+    )
+    df['SAP_Count'] = df['StoreList'].apply(lambda x: len(set(x)))
+    df['StoreSample'] = df['StoreList'].apply(lambda x: ', '.join(x[:10]))
+    df['SellableID'] = pd.to_numeric(df['ProductCode'].astype(str).str.lstrip('0'), errors='coerce').astype('Int64')
+    return df[['SellableID', 'SAP_Count', 'StoreSample']]
+
+
 def build_dashboard(df_catalog, df_location, df_gp, df_price, df_images):
     df = df_catalog.merge(
         df_location,
@@ -295,6 +336,11 @@ def main():
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     output_path = os.path.join(BASE_DIR, f'Website_Dashboard_Output_{timestamp}.xlsx')
     os.makedirs(BASE_DIR, exist_ok=True)
+    # Check that required input files are present
+    check_file(PRICING_CSV, 'Pricing CSV')
+    check_file(PRODUCTS_CSV, 'Products CSV')
+    check_file(IMAGES_CSV, 'Images CSV')
+    check_file(SAP_LISTINGS_XLSX, 'SAP listings file')
     try:
         conn = pyodbc.connect(CONN_STR)
         region_map = load_region_lookup(conn)
@@ -305,6 +351,23 @@ def main():
         gp_info = load_general_product_info(conn)
         images_df = load_product_images()
         final_df = build_dashboard(catalog, location_data, gp_info, pricing_data, images_df)
+
+        sap_counts = load_sap_store_counts()
+        final_df = final_df.merge(
+            sap_counts,
+            left_on='Sellable ID',
+            right_on='SellableID',
+            how='left'
+        ).drop(columns=['SellableID'])
+        final_df = final_df.rename(columns={'SAP_Count': 'Stores Listed in SAP', 'StoreSample': 'SAP Store Sample'})
+
+        mismatch_counts = final_df[
+            final_df['Stores Listed in SAP'] != final_df['Available in Stores (Count)']
+        ][[
+            'SAP BD', 'Sellable ID', 'Available in Stores (Count)',
+            'Stores Listed in SAP', 'SAP Store Sample'
+        ]]
+        final_df = final_df.drop(columns=['SAP Store Sample'])
 
         # Determine most common store count per region combination
         mode_map = (final_df.groupby('Regions On Website')['Available in Stores (Count)']
@@ -332,7 +395,7 @@ def main():
          # Append helper column for formatting
         column_order = [
             'SAP BD', 'Sellable ID', 'Website Product Name', 'SAP Product Name',
-            'Regions On Website', 'Available in Stores (Count)',
+            'Regions On Website', 'Available in Stores (Count)', 'Stores Listed in SAP',
             'Retail by Region (updated weekly)', 'Product Description',
             'Legal Disclaimer', 'Image Status', 'Hierarchy',
             'SAP Commodity Group', 'SAP Sub Commodity Group',
@@ -357,20 +420,22 @@ def main():
             'D': 35,
             'E': 19,
             'F': 20,
-            'g': 27,
-            'H': 86,  # Product Description
-            'I': 71,  # Legal Disclaimer
-            'J': 15,
+            'G': 20,
+            'H': 27,
+            'I': 86,  # Product Description
+            'J': 71,  # Legal Disclaimer
             'K': 15,
             'L': 15,
             'M': 15,
             'N': 15,
             'O': 15,
             'P': 15,
+            'Q': 15,
+            'R': 15,
         }
         for col, width in width_map.items():
             ws.column_dimensions[col].width = width
-        for cell in ws['H']:
+        for cell in ws['I']:
             cell.alignment = Alignment(wrap_text=True)
 
         # Grey out rows with no stores
@@ -387,6 +452,11 @@ def main():
         rule.formula = [f"${dev_col}2"]
         count_col = get_column_letter([c.value for c in ws[1]].index('Available in Stores (Count)') + 1)
         ws.conditional_formatting.add(f"{count_col}2:{count_col}{ws.max_row}", rule)
+
+        sap_col = get_column_letter([c.value for c in ws[1]].index('Stores Listed in SAP') + 1)
+        rule = Rule(type='expression', dxf=DifferentialStyle(fill=yellow_fill))
+        rule.formula = [f"${sap_col}2<>${count_col}2"]
+        ws.conditional_formatting.add(f"{sap_col}2:{sap_col}{ws.max_row}", rule)
 
         # Highlight multiple prices
         multi_col = get_column_letter([c.value for c in ws[1]].index('Multiple Prices') + 1)
@@ -442,6 +512,12 @@ def main():
             for r in dataframe_to_rows(mismatch_df, index=False, header=True):
                 mis_ws.append(r)
             mis_ws.auto_filter.ref = mis_ws.dimensions
+
+        if not mismatch_counts.empty:
+            samp_ws = wb.create_sheet('Mismatch Samples')
+            for r in dataframe_to_rows(mismatch_counts, index=False, header=True):
+                samp_ws.append(r)
+            samp_ws.auto_filter.ref = samp_ws.dimensions
 
         wb.save(output_path)
         print(f"Export successful! File saved to: {output_path}")
