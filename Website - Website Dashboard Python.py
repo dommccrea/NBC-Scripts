@@ -15,6 +15,7 @@ from rapidfuzz import fuzz
 # Paths to CSV files
 BASE_DIR = r'C:\Users\dmccrea\Documents\Python Scripts\New folder'
 PRICING_CSV = os.path.join(BASE_DIR, 'AU_product_offer_price_en_AU.csv')
+PUBLISHED_OFFERS_CSV = os.path.join(BASE_DIR, 'publishedOffers.csv')
 PRODUCTS_CSV = os.path.join(BASE_DIR, 'AU_products_en_AU.csv')
 IMAGES_CSV = os.path.join(BASE_DIR, 'AU_product_image_en_AU.csv')
 SAP_LISTINGS_XLSX = os.path.join(BASE_DIR, 'SAP Listings.xlsx')
@@ -83,6 +84,15 @@ def load_pricing_data():
     return df[['SellableID', 'StoreID', 'RetailCents']]
 
 
+def load_published_offers():
+    df = pd.read_csv(PUBLISHED_OFFERS_CSV, usecols=['offer reference'], dtype=str)
+    parts = df['offer reference'].str.split('_', n=1, expand=True)
+    df['SellableID'] = pd.to_numeric(parts[0].str.lstrip('0'), errors='coerce').astype('Int64')
+    df['StoreID'] = parts[1].str.lstrip('0')
+    df = df.dropna(subset=['SellableID', 'StoreID'])
+    return df[['SellableID', 'StoreID']]
+
+
 def compute_product_pricing(pricing_df, region_map):
     df = pricing_df.copy()
     df['Retail'] = df['RetailCents'] / 100.0
@@ -105,8 +115,8 @@ def compute_product_pricing(pricing_df, region_map):
     return grouped[['SellableID', 'Retail', 'Regions']]
 
 
-def compute_product_location(pricing_df, region_map):
-    df = pricing_df[['SellableID', 'StoreID']].drop_duplicates()
+def compute_product_location(offers_df, region_map):
+    df = offers_df[['SellableID', 'StoreID']].drop_duplicates()
     df['Region'] = df['StoreID'].astype(str).map(region_map)
     df = df.dropna(subset=['Region'])
 
@@ -352,6 +362,7 @@ def main():
     os.makedirs(BASE_DIR, exist_ok=True)
     # Check that required input files are present
     check_file(PRICING_CSV, 'Pricing CSV')
+    check_file(PUBLISHED_OFFERS_CSV, 'Published Offers CSV')
     check_file(PRODUCTS_CSV, 'Products CSV')
     check_file(IMAGES_CSV, 'Images CSV')
     check_file(SAP_LISTINGS_XLSX, 'SAP listings file')
@@ -361,13 +372,14 @@ def main():
         region_map = dict(zip(store_data['StoreID'], store_data['Region']))
         store_info_map = store_data.set_index('StoreID')[['StoreName', 'Region']].to_dict('index')
         pricing_base = load_pricing_data()
+        offers_base = load_published_offers()
         website_store_map = (
-            pricing_base.groupby('SellableID')['StoreID']
+            offers_base.groupby('SellableID')['StoreID']
             .apply(lambda x: sorted(set(x.astype(str).str.lstrip('0'))))
             .to_dict()
         )
         pricing_data = compute_product_pricing(pricing_base, region_map)
-        location_data = compute_product_location(pricing_base, region_map)
+        location_data = compute_product_location(offers_base, region_map)
         catalog = load_product_catalog()
         gp_info = load_general_product_info(conn)
         images_df = load_product_images()
