@@ -8,7 +8,7 @@ from openpyxl.styles.differential import DifferentialStyle
 from openpyxl.formatting.rule import Rule
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.dataframe import dataframe_to_rows
-from openpyxl.worksheet.table import Table, TableStyleInfo
+# Table functionality was removed as it caused Excel recovery errors
 from datetime import datetime
 from rapidfuzz import fuzz
 
@@ -51,6 +51,19 @@ def load_region_lookup(conn):
     """
     df = pd.read_sql(query, conn)
     return dict(zip(df['StoreID'].astype(str), df['Region']))
+
+
+def load_store_data(conn):
+    """Return dataframe of store metadata including names and regions."""
+    query = """
+    SELECT [AHEAD_Plant_ID] AS StoreID,
+           [AHEAD_Store_Name] AS StoreName,
+           [Legacy_Region_Name_Short] AS Region
+    FROM dds.INT_OBJ_MD_Store
+    """
+    df = pd.read_sql(query, conn)
+    df['StoreID'] = df['StoreID'].astype(str)
+    return df
 
 
 def load_pricing_data():
@@ -344,7 +357,9 @@ def main():
     check_file(SAP_LISTINGS_XLSX, 'SAP listings file')
     try:
         conn = pyodbc.connect(CONN_STR)
-        region_map = load_region_lookup(conn)
+        store_data = load_store_data(conn)
+        region_map = dict(zip(store_data['StoreID'], store_data['Region']))
+        store_info_map = store_data.set_index('StoreID')[['StoreName', 'Region']].to_dict('index')
         pricing_base = load_pricing_data()
         website_store_map = (
             pricing_base.groupby('SellableID')['StoreID']
@@ -379,15 +394,28 @@ def main():
             'Stores Listed in SAP', 'SAP Store List'
         ]]
 
-        def diff_list(a, b):
-            return ', '.join(list(a - b)[:5])
+        def diff_info(primary, secondary):
+            diff = [s for s in primary - secondary]
+            formatted = []
+            regions = set()
+            for sid in diff[:5]:
+                info = store_info_map.get(sid)
+                if info:
+                    formatted.append(f"{info['StoreName']} ({info['Region']})")
+                    regions.add(info['Region'])
+                else:
+                    formatted.append(str(sid))
+            return ', '.join(formatted), ', '.join(sorted(regions))
 
-        mismatch_counts['Stores on Website Without Listing (up to 5)'] = mismatch_counts['Sellable ID'].apply(
-            lambda sid: diff_list(set(website_store_map.get(sid, [])), set(sap_store_map.get(sid, [])))
+        cols = mismatch_counts['Sellable ID'].apply(
+            lambda sid: diff_info(set(website_store_map.get(sid, [])), set(sap_store_map.get(sid, [])))
         )
-        mismatch_counts['Stores Listed without Product Available Online (up to 5)'] = mismatch_counts['Sellable ID'].apply(
-            lambda sid: diff_list(set(sap_store_map.get(sid, [])), set(website_store_map.get(sid, [])))
+        mismatch_counts[['Stores on Website Without Listing (up to 5)', 'Regions with Website Only']] = pd.DataFrame(cols.tolist(), index=mismatch_counts.index)
+
+        cols = mismatch_counts['Sellable ID'].apply(
+            lambda sid: diff_info(set(sap_store_map.get(sid, [])), set(website_store_map.get(sid, [])))
         )
+        mismatch_counts[['Stores Listed without Product Available Online (up to 5)', 'Regions with SAP Only']] = pd.DataFrame(cols.tolist(), index=mismatch_counts.index)
         mismatch_counts = mismatch_counts.drop(columns=['SAP Store List'])
         final_df = final_df.drop(columns=['SAP Store Sample', 'SAP Store List'])
 
@@ -410,6 +438,7 @@ def main():
         mismatch_df = final_df[
             final_df['Fuzzy Score'] < 30
         ][['SAP BD', 'Sellable ID', 'Website Product Name', 'SAP Product Name', 'Fuzzy Score']]
+        mismatch_df = mismatch_df.sort_values('Fuzzy Score')
 
         # Remove helper column from main output
         final_df = final_df.drop(columns=['Fuzzy Score'])
@@ -433,14 +462,8 @@ def main():
 
         ws.title = 'Website Dashboard'
 
-        # Auto filter
+        # Auto filter only. Table creation removed to avoid Excel recovery errors
         ws.auto_filter.ref = ws.dimensions
-
-        # Add table for easier filtering
-        tab = Table(displayName='WebsiteDashboard', ref=ws.dimensions)
-        style = TableStyleInfo(name='TableStyleMedium9', showRowStripes=True)
-        tab.tableStyleInfo = style
-        ws.add_table(tab)
 
         # Column widths and wrap text
         width_map = {
