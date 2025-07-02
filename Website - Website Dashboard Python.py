@@ -401,7 +401,9 @@ def main():
             for sid in diff[:5]:
                 info = store_info_map.get(sid)
                 if info:
-                    formatted.append(f"{info['StoreName']} ({info['Region']})")
+                    formatted.append(
+                        f"{info['StoreName']} ({sid}, {info['Region']})"
+                    )
                     regions.add(info['Region'])
                 else:
                     formatted.append(str(sid))
