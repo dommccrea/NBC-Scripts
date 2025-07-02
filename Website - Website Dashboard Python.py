@@ -185,28 +185,27 @@ def load_sap_store_counts():
         return pd.DataFrame(columns=['SellableID', 'SAP_Count', 'StoreSample'])
 
     df = pd.read_excel(SAP_LISTINGS_XLSX, dtype=str)
-    df.columns = [c.strip() for c in df.columns]
+    df.columns = [str(c).strip() for c in df.columns]
     if not df.columns.empty:
         df.rename(columns={df.columns[0]: 'ProductCode'}, inplace=True)
 
-    store_cols = [c for c in df.columns if 'stores' in c.lower()]
+    store_cols = [c for c in df.columns if 'store' in c.lower()]
+    if not store_cols:
+        return pd.DataFrame(columns=['SellableID', 'SAP_Count', 'StoreSample'])
 
-    def parse_row(row):
-        stores = []
-        for col in store_cols:
-            val = row.get(col)
-            if pd.isna(val):
-                continue
-            for s in str(val).split(','):
-                s = s.strip().lstrip('0')
-                if s:
-                    stores.append(s)
-        return stores
+    def parse_cell(val):
+        if pd.isna(val):
+            return []
+        val = str(val).replace('\n', ',').replace(';', ',')
+        return [s.strip().lstrip('0') for s in val.split(',') if s.strip()]
 
-    df['StoreList'] = df.apply(parse_row, axis=1)
+    df['StoreList'] = (
+        df[store_cols]
+        .apply(lambda r: [s for col in store_cols for s in parse_cell(r[col])], axis=1)
+    )
     df['SAP_Count'] = df['StoreList'].apply(lambda x: len(set(x)))
     df['StoreSample'] = df['StoreList'].apply(lambda x: ', '.join(x[:10]))
-    df['SellableID'] = pd.to_numeric(df['ProductCode'].str.lstrip('0'), errors='coerce').astype('Int64')
+    df['SellableID'] = pd.to_numeric(df['ProductCode'].astype(str).str.lstrip('0'), errors='coerce').astype('Int64')
     return df[['SellableID', 'SAP_Count', 'StoreSample']]
 
 
