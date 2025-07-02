@@ -398,12 +398,15 @@ def main():
             'StoreSample': 'SAP Store Sample',
             'StoreList': 'SAP Store List'
         })
+        # Ensure blank SAP counts are treated as 0 for comparison logic
+        final_df['Stores Listed in SAP'] = final_df['Stores Listed in SAP'].fillna(0).astype(int)
 
         mismatch_counts = final_df[
-            final_df['Stores Listed in SAP'] != final_df['Available in Stores (Count)']
+            (final_df['Stores Listed in SAP'] != final_df['Available in Stores (Count)']) &
+            ~((final_df['Stores Listed in SAP'] == 0) & (final_df['Available in Stores (Count)'] == 0))
         ][[
-            'SAP BD', 'Sellable ID', 'Available in Stores (Count)',
-            'Stores Listed in SAP', 'SAP Store List'
+            'SAP BD', 'Sellable ID', 'Website Product Name', 'Product Link',
+            'Available in Stores (Count)', 'Stores Listed in SAP', 'SAP Store List'
         ]]
 
         def diff_info(primary, secondary):
@@ -430,7 +433,7 @@ def main():
             lambda sid: diff_info(set(sap_store_map.get(sid, [])), set(website_store_map.get(sid, [])))
         )
         mismatch_counts[['Stores Listed without Product Available Online (up to 5)', 'Regions with SAP Only']] = pd.DataFrame(cols.tolist(), index=mismatch_counts.index)
-        mismatch_counts = mismatch_counts.drop(columns=['SAP Store List'])
+        mismatch_counts = mismatch_counts.drop(columns=['SAP Store List', 'Product Link'])
         final_df = final_df.drop(columns=['SAP Store Sample', 'SAP Store List'])
 
         # Determine most common store count per region combination
@@ -568,6 +571,17 @@ def main():
             No_Image_Count=('Image Status', lambda x: (x == 'No Image Online').sum())
         ).reset_index()
 
+        not_online_count = final_df[(final_df['Available in Stores (Count)'] == 0) &
+                                    (final_df['Stores Listed in SAP'] > 0)]['Sellable ID'].nunique()
+        extra_row = pd.DataFrame([
+            {
+                'SAP BD': 'Not in Stores Online, but Listed to Stores',
+                'Product_Count': not_online_count,
+                'No_Image_Count': ''
+            }
+        ])
+        pivot_df = pd.concat([pivot_df, extra_row], ignore_index=True)
+
         piv_ws = wb.create_sheet('BD Pivot')
         for r in dataframe_to_rows(pivot_df, index=False, header=True):
             piv_ws.append(r)
@@ -590,6 +604,16 @@ def main():
             samp_ws.auto_filter.ref = samp_ws.dimensions
             for col in range(1, samp_ws.max_column + 1):
                 samp_ws.column_dimensions[get_column_letter(col)].width = 20
+
+            name_idx = list(mismatch_counts.columns).index('Website Product Name') + 1
+            link_idx = list(mismatch_counts.columns).index('Product Link') + 1
+            for row in range(2, samp_ws.max_row + 1):
+                link = samp_ws.cell(row=row, column=link_idx).value
+                cell = samp_ws.cell(row=row, column=name_idx)
+                if link:
+                    cell.hyperlink = link
+                    cell.font = Font(color='0000FF', underline='single')
+            samp_ws.column_dimensions[get_column_letter(link_idx)].hidden = True
 
         wb.save(output_path)
         print(f"Export successful! File saved to: {output_path}")
