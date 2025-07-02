@@ -433,7 +433,8 @@ def main():
             lambda sid: diff_info(set(sap_store_map.get(sid, [])), set(website_store_map.get(sid, [])))
         )
         mismatch_counts[['Stores Listed without Product Available Online (up to 5)', 'Regions with SAP Only']] = pd.DataFrame(cols.tolist(), index=mismatch_counts.index)
-        mismatch_counts = mismatch_counts.drop(columns=['SAP Store List', 'Product Link'])
+        # Keep Product Link so we can add hyperlinks later
+        mismatch_counts = mismatch_counts.drop(columns=['SAP Store List'])
         final_df = final_df.drop(columns=['SAP Store Sample', 'SAP Store List'])
 
         # Determine most common store count per region combination
