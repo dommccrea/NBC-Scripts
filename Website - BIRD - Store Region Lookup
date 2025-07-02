@@ -1,0 +1,3 @@
+SELECT [AHEAD_Plant_ID] AS StoreID, AHEAD_Store_Name as StoreName,
+[Legacy_Region_Name_Short] AS Region
+    FROM dds.INT_OBJ_MD_Store
