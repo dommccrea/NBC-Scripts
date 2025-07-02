@@ -457,6 +457,7 @@ def main():
             final_df['Fuzzy Score'] < 30
         ][['SAP BD', 'Sellable ID', 'Website Product Name', 'SAP Product Name', 'Fuzzy Score']]
         mismatch_df = mismatch_df.sort_values('Fuzzy Score')
+        mismatch_df = mismatch_df.rename(columns={'Fuzzy Score': 'Fuzzy Score %'})
 
         # Remove helper column from main output
         final_df = final_df.drop(columns=['Fuzzy Score'])
@@ -516,15 +517,16 @@ def main():
         rule.formula = [f"${avail_col}2=0"]
         ws.conditional_formatting.add(f"A2:{get_column_letter(ws.max_column)}{ws.max_row}", rule)
 
-        # Highlight counts deviating from mode
+        # Highlight count differences between website and SAP
         yellow_fill = PatternFill(start_color='FFFACD', end_color='FFFACD', fill_type='solid')
-        dev_col = get_column_letter([c.value for c in ws[1]].index('Deviation') + 1)
-        rule = Rule(type='expression', dxf=DifferentialStyle(fill=yellow_fill))
-        rule.formula = [f"${dev_col}2"]
         count_col = get_column_letter([c.value for c in ws[1]].index('Available in Stores (Count)') + 1)
+        sap_col = get_column_letter([c.value for c in ws[1]].index('Stores Listed in SAP') + 1)
+        dev_col = get_column_letter([c.value for c in ws[1]].index('Deviation') + 1)
+
+        rule = Rule(type='expression', dxf=DifferentialStyle(fill=yellow_fill))
+        rule.formula = [f"${count_col}2<>${sap_col}2"]
         ws.conditional_formatting.add(f"{count_col}2:{count_col}{ws.max_row}", rule)
 
-        sap_col = get_column_letter([c.value for c in ws[1]].index('Stores Listed in SAP') + 1)
         rule = Rule(type='expression', dxf=DifferentialStyle(fill=yellow_fill))
         rule.formula = [f"${sap_col}2<>${count_col}2"]
         ws.conditional_formatting.add(f"{sap_col}2:{sap_col}{ws.max_row}", rule)
@@ -567,21 +569,19 @@ def main():
         ws.column_dimensions[multi_col].hidden = True
 
         # Create pivot summary sheet
-        pivot_df = final_df[final_df['Available in Stores (Count)'] > 0].groupby('SAP BD').agg(
-            Product_Count=('Sellable ID', 'nunique'),
-            No_Image_Count=('Image Status', lambda x: (x == 'No Image Online').sum())
-        ).reset_index()
+        def not_online_count(group):
+            mask = (group['Available in Stores (Count)'] == 0) & (group['Stores Listed in SAP'] > 0)
+            return group.loc[mask, 'Sellable ID'].nunique()
 
-        not_online_count = final_df[(final_df['Available in Stores (Count)'] == 0) &
-                                    (final_df['Stores Listed in SAP'] > 0)]['Sellable ID'].nunique()
-        extra_row = pd.DataFrame([
-            {
-                'SAP BD': 'Not in Stores Online, but Listed to Stores',
-                'Product_Count': not_online_count,
-                'No_Image_Count': ''
-            }
-        ])
-        pivot_df = pd.concat([pivot_df, extra_row], ignore_index=True)
+        pivot_df = (
+            final_df.groupby('SAP BD')
+            .apply(lambda g: pd.Series({
+                'Product_Count': g['Sellable ID'].nunique(),
+                'No_Image_Count': (g['Image Status'] == 'No Image Online').sum(),
+                'Not in Stores Online, but listed to stores': not_online_count(g)
+            }))
+            .reset_index()
+        )
 
         piv_ws = wb.create_sheet('BD Pivot')
         for r in dataframe_to_rows(pivot_df, index=False, header=True):
@@ -597,17 +597,36 @@ def main():
             width_map = {'A':20, 'B':15, 'C':40, 'D':40, 'E':15}
             for col, width in width_map.items():
                 mis_ws.column_dimensions[col].width = width
+            fuzzy_col = get_column_letter(list(mismatch_df.columns).index('Fuzzy Score %') + 1)
+            for cell in mis_ws[fuzzy_col][2:mis_ws.max_row+1]:
+                cell.number_format = '0'
 
         if not mismatch_counts.empty:
             samp_ws = wb.create_sheet('Listing Discrepancy')
-
             display_df = mismatch_counts.drop(columns=['Product Link'])
+            cols = list(display_df.columns)
+            if 'Stores Listed in SAP' in cols and 'Regions with Website Only' in cols:
+                cols.insert(cols.index('Regions with Website Only') + 1, cols.pop(cols.index('Stores Listed in SAP')))
+                display_df = display_df[cols]
             for r in dataframe_to_rows(display_df, index=False, header=True):
                 samp_ws.append(r)
 
             samp_ws.auto_filter.ref = samp_ws.dimensions
             for col in range(1, samp_ws.max_column + 1):
                 samp_ws.column_dimensions[get_column_letter(col)].width = 20
+
+            width_overrides = {
+                'Stores Listed without Product Available Online (up to 5)': 45,
+                'Stores on Website Without Listing (up to 5)': 45,
+                'Website Product Name': 40,
+            }
+            for col_name, width in width_overrides.items():
+                if col_name in display_df.columns:
+                    col_letter = get_column_letter(list(display_df.columns).index(col_name) + 1)
+                    samp_ws.column_dimensions[col_letter].width = width
+
+            for cell in samp_ws[1]:
+                cell.alignment = Alignment(wrap_text=True)
 
             name_idx = list(display_df.columns).index('Website Product Name') + 1
             for row_idx, link in enumerate(mismatch_counts['Product Link'], start=2):
@@ -619,20 +638,26 @@ def main():
             yellow_fill_ld = PatternFill(start_color='FFFACD', end_color='FFFACD', fill_type='solid')
             orange_fill_ld = PatternFill(start_color='FFE4B5', end_color='FFE4B5', fill_type='solid')
 
-            yellow_cols = ['Available in Stores (Count)', 'Stores on Website Without Listing (up to 5)']
-            orange_cols = ['Regions with Website Only', 'Stores Listed in SAP']
+            yellow_cols = ['Available in Stores (Count)',
+                           'Stores on Website Without Listing (up to 5)',
+                           'Regions with Website Only']
+            orange_cols = ['Stores Listed in SAP',
+                           'Stores Listed without Product Available Online (up to 5)',
+                           'Regions with SAP Only']
 
             for col_name in yellow_cols:
                 if col_name in display_df.columns:
-                    col_idx = list(display_df.columns).index(col_name) + 1
-                    for row in range(1, samp_ws.max_row + 1):
-                        samp_ws.cell(row=row, column=col_idx).fill = yellow_fill_ld
+                    col_letter = get_column_letter(list(display_df.columns).index(col_name) + 1)
+                    rule = Rule(type='expression', dxf=DifferentialStyle(fill=yellow_fill_ld))
+                    rule.formula = [f"LEN(${col_letter}2&\"\")>0"]
+                    samp_ws.conditional_formatting.add(f"{col_letter}2:{col_letter}{samp_ws.max_row}", rule)
 
             for col_name in orange_cols:
                 if col_name in display_df.columns:
-                    col_idx = list(display_df.columns).index(col_name) + 1
-                    for row in range(1, samp_ws.max_row + 1):
-                        samp_ws.cell(row=row, column=col_idx).fill = orange_fill_ld
+                    col_letter = get_column_letter(list(display_df.columns).index(col_name) + 1)
+                    rule = Rule(type='expression', dxf=DifferentialStyle(fill=orange_fill_ld))
+                    rule.formula = [f"LEN(${col_letter}2&\"\")>0"]
+                    samp_ws.conditional_formatting.add(f"{col_letter}2:{col_letter}{samp_ws.max_row}", rule)
 
         wb.save(output_path)
         print(f"Export successful! File saved to: {output_path}")
