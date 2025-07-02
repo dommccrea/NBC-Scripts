@@ -600,21 +600,39 @@ def main():
 
         if not mismatch_counts.empty:
             samp_ws = wb.create_sheet('Listing Discrepancy')
-            for r in dataframe_to_rows(mismatch_counts, index=False, header=True):
+
+            display_df = mismatch_counts.drop(columns=['Product Link'])
+            for r in dataframe_to_rows(display_df, index=False, header=True):
                 samp_ws.append(r)
+
             samp_ws.auto_filter.ref = samp_ws.dimensions
             for col in range(1, samp_ws.max_column + 1):
                 samp_ws.column_dimensions[get_column_letter(col)].width = 20
 
-            name_idx = list(mismatch_counts.columns).index('Website Product Name') + 1
-            link_idx = list(mismatch_counts.columns).index('Product Link') + 1
-            for row in range(2, samp_ws.max_row + 1):
-                link = samp_ws.cell(row=row, column=link_idx).value
-                cell = samp_ws.cell(row=row, column=name_idx)
+            name_idx = list(display_df.columns).index('Website Product Name') + 1
+            for row_idx, link in enumerate(mismatch_counts['Product Link'], start=2):
                 if link:
+                    cell = samp_ws.cell(row=row_idx, column=name_idx)
                     cell.hyperlink = link
                     cell.font = Font(color='0000FF', underline='single')
-            samp_ws.column_dimensions[get_column_letter(link_idx)].hidden = True
+
+            yellow_fill_ld = PatternFill(start_color='FFFACD', end_color='FFFACD', fill_type='solid')
+            orange_fill_ld = PatternFill(start_color='FFE4B5', end_color='FFE4B5', fill_type='solid')
+
+            yellow_cols = ['Available in Stores (Count)', 'Stores on Website Without Listing (up to 5)']
+            orange_cols = ['Regions with Website Only', 'Stores Listed in SAP']
+
+            for col_name in yellow_cols:
+                if col_name in display_df.columns:
+                    col_idx = list(display_df.columns).index(col_name) + 1
+                    for row in range(1, samp_ws.max_row + 1):
+                        samp_ws.cell(row=row, column=col_idx).fill = yellow_fill_ld
+
+            for col_name in orange_cols:
+                if col_name in display_df.columns:
+                    col_idx = list(display_df.columns).index(col_name) + 1
+                    for row in range(1, samp_ws.max_row + 1):
+                        samp_ws.cell(row=row, column=col_idx).fill = orange_fill_ld
 
         wb.save(output_path)
         print(f"Export successful! File saved to: {output_path}")
