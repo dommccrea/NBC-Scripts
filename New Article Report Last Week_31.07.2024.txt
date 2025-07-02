@@ -1,0 +1,82 @@
+Select distinct
+        case when left(ZS2A_LISTAPR_ITM.LISTINGID,1) = 'L' then 'Listed' else 'Delisted' End Listed_Delisted
+    ,right(ZS2A_LISTAPR_ITM.MATERIALNUMBER,6) DisplayID
+    ,makt.maktx Description
+    ,left(ZS2A_LISTAPR_ITM.LAYOUTMODULE,7) MasterAssortment
+    ,left(wrst.name1,25) Assortment_Description
+    ,ZS2A_LISTAPR_ITM.NEWSALESSTARTDATE Listing_start
+    ,case when ZS2A_LISTAPR_ITM.NEWSALESENDDATE = 0 then NEWLISTINGENDDATE else ZS2A_LISTAPR_ITM.NEWSALESENDDATE end Listing_End
+    ,ZS2A_LISTAPR_ITM.DISTRIBUTIONCENTER DC
+    ,marc.mmsta DC_Status
+    ,case when ZS2A_LISTAPR_ITM.DCLISTINGSTARTDATE = 0 then '' else ZS2A_LISTAPR_ITM.DCLISTINGSTARTDATE end DC_Start
+    ,case when ZS2A_LISTAPR_ITM.DCLISTINGENDDATE = 0 then '' else ZS2A_LISTAPR_ITM.DCLISTINGENDDATE end DC_End
+    ,ZS2A_LISTAPR_ITM.CREATEDON Execution_Date
+    ,ZACDC_FREE_TASK.POSTED_ON AS Sub_Bulletin_Posted
+   /* ,ZS2A_LISTAPR_ITM.CHANGEDBY BA_Listed*/
+    ,adrp.name_first||'  '||adrp.name_last ListedBy
+    ,mvke.ZZPRGRP||' - '||T.EKNAM AS BUYING_DIRECTOR
+    ,right(mara.MATKL,2)|| ' - '|| WRF_MATGRP_MD4T.LTEXT ASCG
+
+from ZS2A_LISTAPR_ITM
+
+left join mara
+    on ZS2A_LISTAPR_ITM.MATERIALNUMBER = mara.matnr
+
+left join wrst
+    on wrst.asort = ZS2A_LISTAPR_ITM.LAYOUTMODULE
+    and wrst.spras = 'E'
+
+Left Join
+    ZS2A_LISTAPR_HDR on
+            ZS2A_LISTAPR_HDR.LISTINGID = ZS2A_LISTAPR_ITM.LISTINGID
+
+left join marc on
+    marc.matnr = ZS2A_LISTAPR_ITM.MATERIALNUMBER
+    and marc.werks = ZS2A_LISTAPR_ITM.DISTRIBUTIONCENTER
+
+LEFT JOIN
+      WRF_MATGRP_MD4T ON
+            WRF_MATGRP_MD4T.NODE = MARA.MATKL AND
+            WRF_MATGRP_MD4T.SPRAS = 'E'
+
+left join
+    MVKE ON
+		MVKE.MATNR = MARA.MATNR AND
+		MVKE.VKORG = '5998' AND
+		MVKE.VTWEG = '10'
+
+LEFT JOIN
+	MAKT ON
+		MAKT.MATNR = MARA.MATNR AND
+		MAKT.SPRAS = 'E'
+
+LEFT JOIN
+	T024 T ON
+		T.EKGRP = MVKE.ZZPRGRP
+
+left join usr21 on
+    usr21.bname = ZS2A_LISTAPR_ITM.CHANGEDBY
+
+left join adrp on
+    usr21.persnumber = adrp.persnumber
+
+Left join
+    ZACDC_FREE_TASKM on
+    ZACDC_FREE_TASKM.matnr = mara.matnr
+
+LEFT join
+    ZACDC_FREE_TASKW on
+    ZACDC_FREE_TASKW.taskid = ZACDC_FREE_TASKM.taskid
+    and ZACDC_FREE_TASKW.werks = ZS2A_LISTAPR_ITM.DISTRIBUTIONCENTER
+
+Left join
+    ZACDC_FREE_TASK on
+    ZACDC_FREE_TASK.taskid = ZACDC_FREE_TASKW.taskid
+    and ZACDC_FREE_TASK.triger = 'FT024'
+
+where
+ZS2A_LISTAPR_HDR.STATUS = 10
+AND ZS2A_LISTAPR_ITM.CREATEDON > add_days(current_date, -7)
+/*AND right(ZS2A_LISTAPR_ITM.MATERIALNUMBER,6) in ('318225')  <- search particular articles*/
+
+order by Listed_Delisted, Execution_Date, BUYING_DIRECTOR
