@@ -462,7 +462,28 @@ def main():
         # Remove helper column from main output
         final_df = final_df.drop(columns=['Fuzzy Score'])
 
-         # Append helper column for formatting
+        # Append any SAP listings not already in the dashboard
+        missing_ids = set(sap_counts['SellableID']) - set(final_df['Sellable ID'])
+        if missing_ids:
+            extra_info = gp_info[gp_info['SellableID'].isin(missing_ids)]
+            extra_counts = sap_counts[sap_counts['SellableID'].isin(missing_ids)]
+            extra = extra_counts.merge(extra_info, on='SellableID', how='left')
+            extra = extra.rename(columns={
+                'SellableID': 'Sellable ID',
+                'Description': 'SAP Product Name',
+                'BD': 'SAP BD',
+                'Hierarchy': 'Hierarchy',
+                'CG': 'SAP Commodity Group',
+                'SCG': 'SAP Sub Commodity Group',
+                'SAP_Count': 'Stores Listed in SAP'
+            })
+            for col in final_df.columns:
+                if col not in extra.columns:
+                    extra[col] = 'Not Active in Website Database'
+            extra = extra[final_df.columns]
+            final_df = pd.concat([final_df, extra], ignore_index=True)
+
+        # Append helper column for formatting
         column_order = [
             'SAP BD', 'Sellable ID', 'Website Product Name', 'SAP Product Name',
             'Regions On Website', 'Available in Stores (Count)', 'Stores Listed in SAP',
