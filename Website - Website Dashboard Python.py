@@ -483,15 +483,29 @@ def main():
             extra = extra[final_df.columns]
             final_df = pd.concat([final_df, extra], ignore_index=True)
 
-        # Append helper column for formatting
+        # Append helper column for formatting.
+        # Explicitly define the desired output order so that
+        # "Stores Listed in SAP" occupies column **G** in the workbook.
         column_order = [
-            'SAP BD', 'Sellable ID', 'Website Product Name', 'SAP Product Name',
-            'Regions On Website', 'Available in Stores (Count)', 'Stores Listed in SAP',
-            'Retail by Region (updated weekly)', 'Product Description',
-            'Legal Disclaimer', 'Image Status', 'Hierarchy',
-            'SAP Commodity Group', 'SAP Sub Commodity Group',
-            'Brand', 'Net Content', 'Product Link',
-            'Multiple Prices', 'Deviation'
+            'SAP BD',                       # A
+            'Sellable ID',                 # B
+            'Website Product Name',        # C
+            'SAP Product Name',            # D
+            'Regions On Website',          # E
+            'Available in Stores (Count)', # F
+            'Stores Listed in SAP',        # G (requested position)
+            'Retail by Region (updated weekly)',  # H
+            'Product Description',         # I
+            'Legal Disclaimer',            # J
+            'Image Status',                # K
+            'Hierarchy',                   # L
+            'SAP Commodity Group',         # M
+            'SAP Sub Commodity Group',     # N
+            'Brand',                       # O
+            'Net Content',                 # P
+            'Product Link',                # Q
+            'Multiple Prices',             # R
+            'Deviation'                    # S (hidden)
         ]
         final_df = final_df[column_order]
 
@@ -513,7 +527,7 @@ def main():
             'D': 35,
             'E': 19,
             'F': 20,
-            'G': 20,
+            'G': 20,  # Stores Listed in SAP
             'H': 27,
             'I': 86,  # Product Description
             'J': 71,  # Legal Disclaimer
@@ -525,6 +539,7 @@ def main():
             'P': 15,
             'Q': 15,
             'R': 15,
+            'S': 15,
         }
         for col, width in width_map.items():
             ws.column_dimensions[col].width = width
