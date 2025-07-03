@@ -645,21 +645,32 @@ def main():
             samp_ws = wb.create_sheet('Listing Discrepancy')
             display_df = mismatch_counts.drop(columns=['Product Link'])
             cols = list(display_df.columns)
+
+            # Ensure "Regions with SAP Only" appears after "Regions with Website Only"
+            # and before "Stores Listed without Product Available Online (up to 5)"
+            if 'Regions with SAP Only' in cols and 'Regions with Website Only' in cols:
+                cols.insert(
+                    cols.index('Regions with Website Only') + 1,
+                    cols.pop(cols.index('Regions with SAP Only'))
+                )
+
+            # Position "Stores Listed in SAP" immediately after the column
+            # "Stores Listed without Product Available Online (up to 5)" when both exist.
             if (
                 'Stores Listed in SAP' in cols and
                 'Stores Listed without Product Available Online (up to 5)' in cols
             ):
                 cols.insert(
-                    cols.index('Stores Listed without Product Available Online (up to 5)'),
+                    cols.index('Stores Listed without Product Available Online (up to 5)') + 1,
                     cols.pop(cols.index('Stores Listed in SAP'))
                 )
-                display_df = display_df[cols]
             elif 'Stores Listed in SAP' in cols and 'Regions with Website Only' in cols:
                 cols.insert(
                     cols.index('Regions with Website Only') + 1,
                     cols.pop(cols.index('Stores Listed in SAP'))
                 )
-                display_df = display_df[cols]
+
+            display_df = display_df[cols]
             for r in dataframe_to_rows(display_df, index=False, header=True):
                 samp_ws.append(r)
 
