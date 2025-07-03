@@ -1,0 +1,38 @@
+=IF(
+  OR(
+    AND(
+      [@Categorise] = "1. New Product",
+      OR(
+        [@[Marketing Confirmation of Sample Received]] <> "",
+        IFNA(
+          LET(
+            _date, XLOOKUP([@[Sellable ID]], SamplesReceived[SellableID], SamplesReceived[Date]),
+            [@[Date Added]] < _date
+          ),
+          FALSE
+        )
+      )
+    ),
+    AND(
+      [@Categorise] = "2. Artwork change",
+      OR(
+        [@[Marketing Confirmation of Sample Received]] <> "",
+        IFNA(
+          LET(
+            _date, XLOOKUP([@[Sellable ID]], SamplesReceived[SellableID], SamplesReceived[Date]),
+            [@[Date Added]] < _date
+          ),
+          FALSE
+        )
+      ),
+      OR(
+        [@[New Artwork in Stores Date]] <> "",
+        [@[New Artwork in Stores Date]] = "TBC",
+        [@[New Artwork in Stores Date]] = "tbc"
+      )
+    ),
+    [@Categorise] = "3. No Sample Required"
+  ),
+  "Show Completed",
+  "Show Open Lines"
+)
