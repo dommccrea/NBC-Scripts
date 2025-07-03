@@ -591,8 +591,12 @@ def main():
 
         # Create pivot summary sheet
         def not_online_count(group):
-            mask = (group['Available in Stores (Count)'] == 0) & (group['Stores Listed in SAP'] > 0)
-            return group.loc[mask, 'Sellable ID'].nunique()
+            mask = (
+                (group['Available in Stores (Count)'] == 0) &
+                (group['Stores Listed in SAP'] > 0)
+            )
+            not_active = group['Available in Stores (Count)'] == 'Not Active in Website Database'
+            return group.loc[mask | not_active, 'Sellable ID'].nunique()
 
         pivot_df = (
             final_df.groupby('SAP BD')
@@ -626,8 +630,20 @@ def main():
             samp_ws = wb.create_sheet('Listing Discrepancy')
             display_df = mismatch_counts.drop(columns=['Product Link'])
             cols = list(display_df.columns)
-            if 'Stores Listed in SAP' in cols and 'Regions with Website Only' in cols:
-                cols.insert(cols.index('Regions with Website Only') + 1, cols.pop(cols.index('Stores Listed in SAP')))
+            if (
+                'Stores Listed in SAP' in cols and
+                'Stores Listed without Product Available Online (up to 5)' in cols
+            ):
+                cols.insert(
+                    cols.index('Stores Listed without Product Available Online (up to 5)'),
+                    cols.pop(cols.index('Stores Listed in SAP'))
+                )
+                display_df = display_df[cols]
+            elif 'Stores Listed in SAP' in cols and 'Regions with Website Only' in cols:
+                cols.insert(
+                    cols.index('Regions with Website Only') + 1,
+                    cols.pop(cols.index('Stores Listed in SAP'))
+                )
                 display_df = display_df[cols]
             for r in dataframe_to_rows(display_df, index=False, header=True):
                 samp_ws.append(r)
@@ -670,15 +686,15 @@ def main():
                 if col_name in display_df.columns:
                     col_letter = get_column_letter(list(display_df.columns).index(col_name) + 1)
                     rule = Rule(type='expression', dxf=DifferentialStyle(fill=yellow_fill_ld))
-                    rule.formula = [f"LEN(${col_letter}2&\"\")>0"]
-                    samp_ws.conditional_formatting.add(f"{col_letter}2:{col_letter}{samp_ws.max_row}", rule)
+                    rule.formula = [f"LEN(${col_letter}1&\"\")>0"]
+                    samp_ws.conditional_formatting.add(f"{col_letter}1:{col_letter}{samp_ws.max_row}", rule)
 
             for col_name in orange_cols:
                 if col_name in display_df.columns:
                     col_letter = get_column_letter(list(display_df.columns).index(col_name) + 1)
                     rule = Rule(type='expression', dxf=DifferentialStyle(fill=orange_fill_ld))
-                    rule.formula = [f"LEN(${col_letter}2&\"\")>0"]
-                    samp_ws.conditional_formatting.add(f"{col_letter}2:{col_letter}{samp_ws.max_row}", rule)
+                    rule.formula = [f"LEN(${col_letter}1&\"\")>0"]
+                    samp_ws.conditional_formatting.add(f"{col_letter}1:{col_letter}{samp_ws.max_row}", rule)
 
         wb.save(output_path)
         print(f"Export successful! File saved to: {output_path}")
