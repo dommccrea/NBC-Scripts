@@ -6,13 +6,12 @@ WITH
      WHERE ATTYP IN ('00','02')
   ),
 
-  -- 2) Listings starting now or in the next 14 days, not yet expired
+  -- 2) Listings that are valid
   ValidListings AS (
     SELECT ARTNR
          , FILIA
       FROM WLK1
-WHERE DATAB < ADD_DAYS(CURRENT_DATE, 7)
-  AND DATBI > CURRENT_DATE
+WHERE CURRENT_DATE BETWEEN DATAB AND DATBI 
        AND ARTNR LIKE '000000000%'
   ),
 
