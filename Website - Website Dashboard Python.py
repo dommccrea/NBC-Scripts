@@ -34,6 +34,24 @@ CONN_STR = (
 
 EXPECTED_REGIONS = ['BRE', 'DAN', 'DER', 'JKT', 'MIN', 'PRE', 'RGY', 'STP']
 
+# Template for creating a Buying Smart Search (BSS) link. Only the first
+# six digits of the sellable ID are required for the URL.
+BSS_LINK_TEMPLATE = (
+    "https://apacregional-iit-au-prd.launchpad.cfapps.ap20.hana.ondemand.com/"
+    "site?siteId=b8480577-b94c-40bd-8ab2-4131ea48f108"
+    "#BuyingSmartSearch-manage?sap-ui-app-id-hint=saas_approuter_com.sap.aldi.BuyingSmartSearch"
+    "&/detail/{id}/TwoColumnsMidExpanded"
+)
+
+
+def build_bss_link(sellable_id):
+    """Return BSS product link for the given sellable ID."""
+    try:
+        first_six = str(int(sellable_id))[:6]
+    except (ValueError, TypeError):
+        return None
+    return BSS_LINK_TEMPLATE.format(id=first_six)
+
 
 def check_file(path, description):
     """Print whether the given file path exists."""
@@ -723,6 +741,23 @@ def main():
                     cell.value = 'View Online'
                     cell.font = Font(color='0000FF', underline='single')
 
+        # Also hyperlink the product and SAP names for easier navigation
+        web_idx = [c.value for c in ws[1]].index('Website Product Name') + 1
+        sap_idx = [c.value for c in ws[1]].index('SAP Product Name') + 1
+        sid_idx = [c.value for c in ws[1]].index('Sellable ID') + 1
+        for row in range(2, ws.max_row + 1):
+            web_link = ws.cell(row=row, column=col_num).value
+            if web_link:
+                cell = ws.cell(row=row, column=web_idx)
+                cell.hyperlink = web_link
+                cell.font = Font(color='0000FF', underline='single')
+            sid_val = ws.cell(row=row, column=sid_idx).value
+            bss = build_bss_link(sid_val)
+            if bss:
+                cell = ws.cell(row=row, column=sap_idx)
+                cell.hyperlink = bss
+                cell.font = Font(color='0000FF', underline='single')
+
         # Hide helper columns
         ws.column_dimensions[dev_col].hidden = True
         ws.column_dimensions[multi_col].hidden = True
@@ -770,9 +805,26 @@ def main():
             for cell in mis_ws[fuzzy_col][2:mis_ws.max_row+1]:
                 cell.number_format = '0'
 
+            # Hyperlink product names to the website and SAP names to BSS
+            web_idx = list(mismatch_df.columns).index('Website Product Name') + 1
+            sap_idx = list(mismatch_df.columns).index('SAP Product Name') + 1
+            sid_idx = list(mismatch_df.columns).index('Sellable ID') + 1
+            for row_idx, sid in enumerate(mismatch_df['Sellable ID'], start=2):
+                web_link = f"https://www.aldi.com.au/product/{int(sid):018d}" if pd.notnull(sid) else None
+                if web_link:
+                    cell = mis_ws.cell(row=row_idx, column=web_idx)
+                    cell.hyperlink = web_link
+                    cell.font = Font(color='0000FF', underline='single')
+                bss = build_bss_link(sid)
+                if bss:
+                    cell = mis_ws.cell(row=row_idx, column=sap_idx)
+                    cell.hyperlink = bss
+                    cell.font = Font(color='0000FF', underline='single')
+
         if not mismatch_counts.empty:
             samp_ws = wb.create_sheet('Listing Discrepancy')
             display_df = mismatch_counts.drop(columns=['Product Link'])
+            display_df = display_df.rename(columns={'Sellable ID': 'Sellable ID (Smart Search link)'})
             cols = list(display_df.columns)
 
             # Ensure "Regions with SAP Only" appears after "Regions with Website Only"
@@ -821,10 +873,16 @@ def main():
                 cell.alignment = Alignment(wrap_text=True)
 
             name_idx = list(display_df.columns).index('Website Product Name') + 1
-            for row_idx, link in enumerate(mismatch_counts['Product Link'], start=2):
+            sid_idx = list(display_df.columns).index('Sellable ID (Smart Search link)') + 1
+            for row_idx, (link, sid) in enumerate(zip(mismatch_counts['Product Link'], mismatch_counts['Sellable ID']), start=2):
                 if link:
                     cell = samp_ws.cell(row=row_idx, column=name_idx)
                     cell.hyperlink = link
+                    cell.font = Font(color='0000FF', underline='single')
+                bss = build_bss_link(sid)
+                if bss:
+                    cell = samp_ws.cell(row=row_idx, column=sid_idx)
+                    cell.hyperlink = bss
                     cell.font = Font(color='0000FF', underline='single')
 
             yellow_fill_ld = PatternFill(start_color='FFFACD', end_color='FFFACD', fill_type='solid')
@@ -854,6 +912,7 @@ def main():
         if not price_variation_df.empty:
             pv_ws = wb.create_sheet('Store Price Check')
             display_df = price_variation_df.drop(columns=['SAP Commodity Group'])
+            display_df = display_df.rename(columns={'Sellable ID': 'Sellable ID (Smart Search link)'})
             for r in dataframe_to_rows(display_df, index=False, header=True):
                 pv_ws.append(r)
             pv_ws.auto_filter.ref = pv_ws.dimensions
@@ -864,6 +923,21 @@ def main():
             rule = Rule(type='expression', dxf=DifferentialStyle(fill=red_fill))
             rule.formula = [f"LEN(${sample_col}2)>0"]
             pv_ws.conditional_formatting.add(f"{sample_col}2:{sample_col}{pv_ws.max_row}", rule)
+
+            # Hyperlinks for website and Smart Search
+            web_idx = list(display_df.columns).index('Website Product Name') + 1
+            sid_idx = list(display_df.columns).index('Sellable ID (Smart Search link)') + 1
+            for row_idx, sid in enumerate(price_variation_df['Sellable ID'], start=2):
+                web_link = f"https://www.aldi.com.au/product/{int(sid):018d}" if pd.notnull(sid) else None
+                if web_link:
+                    cell = pv_ws.cell(row=row_idx, column=web_idx)
+                    cell.hyperlink = web_link
+                    cell.font = Font(color='0000FF', underline='single')
+                bss = build_bss_link(sid)
+                if bss:
+                    cell = pv_ws.cell(row=row_idx, column=sid_idx)
+                    cell.hyperlink = bss
+                    cell.font = Font(color='0000FF', underline='single')
 
         wb.save(output_path)
         print(f"Export successful! File saved to: {output_path}")
