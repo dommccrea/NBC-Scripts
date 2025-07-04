@@ -677,21 +677,23 @@ def main():
             'F': 20,
             'G': 20,  # Stores Listed in SAP
             'H': 27,
-            'I': 86,  # Product Description
-            'J': 71,  # Legal Disclaimer
+            'I': 81,  # Product Description
+            'J': 40,  # Legal Disclaimer
             'K': 15,
-            'L': 15,
-            'M': 15,
-            'N': 15,
-            'O': 15,
-            'P': 15,
+            'L': 26,  # Hierarchy
+            'M': 28,  # SAP Commodity Group
+            'N': 29,  # SAP Sub Commodity Group
+            'O': 25,  # Brand
+            'P': 20,  # Net Content
             'Q': 15,
             'R': 15,
         }
         for col, width in width_map.items():
             ws.column_dimensions[col].width = width
         for cell in ws['I']:
-            cell.alignment = Alignment(wrap_text=True)
+            cell.alignment = Alignment(wrap_text=True, vertical='top', horizontal='left')
+        for cell in ws['J']:
+            cell.alignment = Alignment(wrap_text=True, vertical='top', horizontal='left')
 
         # Grey out rows with no stores
         grey_fill = PatternFill(start_color='CCCCCC', end_color='CCCCCC', fill_type='solid')
@@ -726,6 +728,7 @@ def main():
         img_col = get_column_letter([c.value for c in ws[1]].index('Image Status') + 1)
         brand_col = get_column_letter([c.value for c in ws[1]].index('Brand') + 1)
         net_col = get_column_letter([c.value for c in ws[1]].index('Net Content') + 1)
+        cg_col = get_column_letter([c.value for c in ws[1]].index('SAP Commodity Group') + 1)
         rule = Rule(type='expression', dxf=DifferentialStyle(fill=red_fill))
         rule.formula = [f"${img_col}2=\"No Image Online\""]
         ws.conditional_formatting.add(f"{img_col}2:{img_col}{ws.max_row}", rule)
@@ -733,7 +736,14 @@ def main():
         rule.formula = [f"LEN(${brand_col}2)=0"]
         ws.conditional_formatting.add(f"{brand_col}2:{brand_col}{ws.max_row}", rule)
         rule = Rule(type='expression', dxf=DifferentialStyle(fill=red_fill))
-        rule.formula = [f"LEN(${net_col}2)=0"]
+        formula = (
+            f"AND(LEN(${net_col}2)=0,"
+            f"NOT(ISNUMBER(SEARCH(\"Beer\",${cg_col}2))),"
+            f"NOT(ISNUMBER(SEARCH(\"Wine\",${cg_col}2))),"
+            f"NOT(ISNUMBER(SEARCH(\"Spirits\",${cg_col}2))),"
+            f"NOT(ISNUMBER(SEARCH(\"Liqueurs\",${cg_col}2))))"
+        )
+        rule.formula = [formula]
         ws.conditional_formatting.add(f"{net_col}2:{net_col}{ws.max_row}", rule)
 
         # Hyperlinks for product and SAP names
