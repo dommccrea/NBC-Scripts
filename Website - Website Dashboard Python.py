@@ -35,6 +35,15 @@ CONN_STR = (
 
 EXPECTED_REGIONS = ['BRE', 'DAN', 'DER', 'JKT', 'MIN', 'PRE', 'RGY', 'STP']
 
+# Business Development managers for whom Zero Net Content should be ignored
+EXCLUDE_ZERO_NET_CONTENT_BDS = {
+    'Ana Packman',
+    'Bianca Giacomazzi',
+    'David Dimovski',
+    'Nicola Mendoza',
+    'Stephen Fisher',
+}
+
 # Template for creating a Buying Smart Search (BSS) link. Only the first
 # six digits of the sellable ID are required for the URL.
 BSS_LINK_TEMPLATE = (
@@ -192,7 +201,10 @@ def _compute_errors(row):
         issues.append('Missing Description')
     if row.get('Image Status') == 'No Image Online':
         issues.append('No Image')
-    if _zero_net_content(row.get('Net Content'), row.get('SAP Commodity Group')):
+    if (
+        row.get('SAP BD') not in EXCLUDE_ZERO_NET_CONTENT_BDS
+        and _zero_net_content(row.get('Net Content'), row.get('SAP Commodity Group'))
+    ):
         issues.append('Zero Net Content')
     if _is_blank(row.get('Brand')):
         issues.append('No Brand')
@@ -900,13 +912,24 @@ def main():
         pivot_source = final_df[~final_df['Hierarchy'].str.contains('Special Buy', case=False, na=False)]
         pivot_df = (
             pivot_source.groupby('SAP BD')
-            .apply(lambda g: pd.Series({
-                'Product_Count': g['Sellable ID'].nunique(),
-                'No_Image_Count': (g['Image Status'] == 'No Image Online').sum(),
-                'Missing_Description_Count': g['Product Description'].apply(_is_blank).sum(),
-                'Zero_Net_Content_Count': g.apply(lambda r: _zero_net_content(r['Net Content'], r['SAP Commodity Group']), axis=1).sum(),
-                'Not in Stores Online, but listed to stores': not_online_count(g)
-            }))
+            .apply(
+                lambda g: pd.Series({
+                    'Product_Count': g['Sellable ID'].nunique(),
+                    'No_Image_Count': (g['Image Status'] == 'No Image Online').sum(),
+                    'Missing_Description_Count': g['Product Description'].apply(_is_blank).sum(),
+                    'Zero_Net_Content_Count': (
+                        0
+                        if g.name in EXCLUDE_ZERO_NET_CONTENT_BDS
+                        else g.apply(
+                            lambda r: _zero_net_content(
+                                r['Net Content'], r['SAP Commodity Group']
+                            ),
+                            axis=1,
+                        ).sum()
+                    ),
+                    'Not in Stores Online, but listed to stores': not_online_count(g),
+                })
+            )
             .reset_index()
         )
         pivot_df = pivot_df.rename(columns={
