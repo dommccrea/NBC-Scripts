@@ -132,6 +132,43 @@ def compute_product_location(offers_df, region_map):
     return grouped
 
 
+def compute_intra_region_price_variation(pricing_df, store_df, valid_stores):
+    """Identify price differences within each region for a product.
+
+    Only stores present in ``valid_stores`` are considered. The output samples
+    include the store name together with the store id and region similar to the
+    listing discrepancy sheet.
+    """
+
+    df = (
+        pricing_df[pricing_df['StoreID'].astype(str).isin(valid_stores)]
+        .merge(
+            store_df[['StoreID', 'StoreName', 'Region']],
+            on='StoreID',
+            how='left'
+        )
+    )
+    df['Retail'] = df['RetailCents'] / 100.0
+    df = df.dropna(subset=['Region'])
+
+    records = []
+    for (sid, region), grp in df.groupby(['SellableID', 'Region']):
+        if grp['Retail'].nunique() > 1:
+            samples = []
+            for price, sub in grp.groupby('Retail'):
+                info = [
+                    f"{row.StoreName} ({row.StoreID}, {row.Region})"
+                    for row in sub[['StoreName', 'StoreID', 'Region']].itertuples(index=False)
+                ]
+                samples.append(f"{price:.2f}: {', '.join(info[:2])}")
+            records.append({
+                'Sellable ID': sid,
+                'Region': region,
+                'Store Price Sample': '; '.join(samples)
+            })
+    return pd.DataFrame(records)
+
+
 def load_product_catalog():
     df = pd.read_csv(
         PRODUCTS_CSV,
@@ -383,9 +420,49 @@ def main():
         catalog = load_product_catalog()
         gp_info = load_general_product_info(conn)
         images_df = load_product_images()
-        final_df = build_dashboard(catalog, location_data, gp_info, pricing_data, images_df)
-
         sap_counts = load_sap_store_counts()
+        valid_stores = set(offers_base['StoreID'].astype(str))
+        if not sap_counts.empty and 'StoreList' in sap_counts.columns:
+            for lst in sap_counts['StoreList']:
+                valid_stores.update(str(s) for s in lst)
+        final_df = build_dashboard(catalog, location_data, gp_info, pricing_data, images_df)
+        price_variation_df = compute_intra_region_price_variation(pricing_base, store_data, valid_stores)
+        if not price_variation_df.empty:
+            info_cols = [
+                'Sellable ID',
+                'Website Product Name',
+                'SAP BD',
+                'Hierarchy',
+                'SAP Commodity Group',
+                'Retail by Region (updated weekly)'
+            ]
+            merge_info = final_df[info_cols].drop_duplicates()
+            price_variation_df = price_variation_df.merge(
+                merge_info, on='Sellable ID', how='left'
+            )
+            other_cols = [
+                'Website Product Name',
+                'SAP BD',
+                'Hierarchy',
+                'SAP Commodity Group',
+                'Retail by Region (updated weekly)'
+            ]
+            price_variation_df = price_variation_df.dropna(
+                subset=other_cols, how='all'
+            )
+            price_variation_df = price_variation_df[
+                [
+                    'SAP BD',
+                    'Sellable ID',
+                    'Website Product Name',
+                    'Hierarchy',
+                    'Region',
+                    'Retail by Region (updated weekly)',
+                    'Store Price Sample',
+                    'SAP Commodity Group'
+                ]
+            ]
+
         sap_store_map = dict(zip(sap_counts['SellableID'], sap_counts['StoreList']))
         final_df = final_df.merge(
             sap_counts,
@@ -406,9 +483,23 @@ def main():
             final_df['SAP Commodity Group'].str.contains('ALDI Services', case=False, na=False) |
             final_df['SAP Commodity Group'].str.contains('Gift Cards', case=False, na=False) |
             final_df['SAP Commodity Group'].str.contains('Giftcards', case=False, na=False) |
-            final_df['SAP Commodity Group'].str.contains('Giftcards, Vouchers, Tickets & Coupons', case=False, na=False)
+            final_df['SAP Commodity Group'].str.contains('Giftcards, Vouchers, Tickets & Coupons', case=False, na=False) |
+            final_df['SAP Commodity Group'].str.contains('Fruits', case=False, na=False) |
+            final_df['SAP Commodity Group'].str.contains('Salads', case=False, na=False) |
+            final_df['SAP Commodity Group'].str.contains('Vegetables', case=False, na=False)
         )
         final_df = final_df[~exclude_mask]
+        if not price_variation_df.empty:
+            exclude_mask_pv = (
+                price_variation_df['SAP Commodity Group'].str.contains('ALDI Services', case=False, na=False) |
+                price_variation_df['SAP Commodity Group'].str.contains('Gift Cards', case=False, na=False) |
+                price_variation_df['SAP Commodity Group'].str.contains('Giftcards', case=False, na=False) |
+                price_variation_df['SAP Commodity Group'].str.contains('Giftcards, Vouchers, Tickets & Coupons', case=False, na=False) |
+                price_variation_df['SAP Commodity Group'].str.contains('Fruits', case=False, na=False) |
+                price_variation_df['SAP Commodity Group'].str.contains('Salads', case=False, na=False) |
+                price_variation_df['SAP Commodity Group'].str.contains('Vegetables', case=False, na=False)
+            )
+            price_variation_df = price_variation_df[~exclude_mask_pv]
 
         mismatch_counts = final_df[
             (final_df['Stores Listed in SAP'] != final_df['Available in Stores (Count)']) &
@@ -497,9 +588,23 @@ def main():
             final_df['SAP Commodity Group'].str.contains('ALDI Services', case=False, na=False) |
             final_df['SAP Commodity Group'].str.contains('Gift Cards', case=False, na=False) |
             final_df['SAP Commodity Group'].str.contains('Giftcards', case=False, na=False) |
-            final_df['SAP Commodity Group'].str.contains('Giftcards, Vouchers, Tickets & Coupons', case=False, na=False)
+            final_df['SAP Commodity Group'].str.contains('Giftcards, Vouchers, Tickets & Coupons', case=False, na=False) |
+            final_df['SAP Commodity Group'].str.contains('Fruits', case=False, na=False) |
+            final_df['SAP Commodity Group'].str.contains('Salads', case=False, na=False) |
+            final_df['SAP Commodity Group'].str.contains('Vegetables', case=False, na=False)
         )
         final_df = final_df[~exclude_mask]
+        if not price_variation_df.empty:
+            exclude_mask_pv = (
+                price_variation_df['SAP Commodity Group'].str.contains('ALDI Services', case=False, na=False) |
+                price_variation_df['SAP Commodity Group'].str.contains('Gift Cards', case=False, na=False) |
+                price_variation_df['SAP Commodity Group'].str.contains('Giftcards', case=False, na=False) |
+                price_variation_df['SAP Commodity Group'].str.contains('Giftcards, Vouchers, Tickets & Coupons', case=False, na=False) |
+                price_variation_df['SAP Commodity Group'].str.contains('Fruits', case=False, na=False) |
+                price_variation_df['SAP Commodity Group'].str.contains('Salads', case=False, na=False) |
+                price_variation_df['SAP Commodity Group'].str.contains('Vegetables', case=False, na=False)
+            )
+            price_variation_df = price_variation_df[~exclude_mask_pv]
 
         # Append helper column for formatting.
         # Explicitly define the desired output order so that
@@ -745,6 +850,20 @@ def main():
                     rule = Rule(type='expression', dxf=DifferentialStyle(fill=orange_fill_ld))
                     rule.formula = [f"LEN(${col_letter}1&\"\")>0"]
                     samp_ws.conditional_formatting.add(f"{col_letter}1:{col_letter}{samp_ws.max_row}", rule)
+
+        if not price_variation_df.empty:
+            pv_ws = wb.create_sheet('Store Price Check')
+            display_df = price_variation_df.drop(columns=['SAP Commodity Group'])
+            for r in dataframe_to_rows(display_df, index=False, header=True):
+                pv_ws.append(r)
+            pv_ws.auto_filter.ref = pv_ws.dimensions
+            for col in range(1, pv_ws.max_column + 1):
+                pv_ws.column_dimensions[get_column_letter(col)].width = 20
+            sample_col = get_column_letter(list(display_df.columns).index('Store Price Sample') + 1)
+            red_fill = PatternFill(start_color='FFCCCC', end_color='FFCCCC', fill_type='solid')
+            rule = Rule(type='expression', dxf=DifferentialStyle(fill=red_fill))
+            rule.formula = [f"LEN(${sample_col}2)>0"]
+            pv_ws.conditional_formatting.add(f"{sample_col}2:{sample_col}{pv_ws.max_row}", rule)
 
         wb.save(output_path)
         print(f"Export successful! File saved to: {output_path}")
