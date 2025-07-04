@@ -428,10 +428,40 @@ def main():
         final_df = build_dashboard(catalog, location_data, gp_info, pricing_data, images_df)
         price_variation_df = compute_intra_region_price_variation(pricing_base, store_data, valid_stores)
         if not price_variation_df.empty:
-            info_cols = ['Sellable ID', 'Website Product Name', 'SAP BD', 'SAP Commodity Group', 'Retail by Region (updated weekly)']
+            info_cols = [
+                'Sellable ID',
+                'Website Product Name',
+                'SAP BD',
+                'Hierarchy',
+                'SAP Commodity Group',
+                'Retail by Region (updated weekly)'
+            ]
             merge_info = final_df[info_cols].drop_duplicates()
-            price_variation_df = price_variation_df.merge(merge_info, on='Sellable ID', how='left')
-            price_variation_df = price_variation_df[['SAP BD', 'Sellable ID', 'Website Product Name', 'Region', 'Retail by Region (updated weekly)', 'Store Price Sample', 'SAP Commodity Group']]
+            price_variation_df = price_variation_df.merge(
+                merge_info, on='Sellable ID', how='left'
+            )
+            other_cols = [
+                'Website Product Name',
+                'SAP BD',
+                'Hierarchy',
+                'SAP Commodity Group',
+                'Retail by Region (updated weekly)'
+            ]
+            price_variation_df = price_variation_df.dropna(
+                subset=other_cols, how='all'
+            )
+            price_variation_df = price_variation_df[
+                [
+                    'SAP BD',
+                    'Sellable ID',
+                    'Website Product Name',
+                    'Hierarchy',
+                    'Region',
+                    'Retail by Region (updated weekly)',
+                    'Store Price Sample',
+                    'SAP Commodity Group'
+                ]
+            ]
 
         sap_store_map = dict(zip(sap_counts['SellableID'], sap_counts['StoreList']))
         final_df = final_df.merge(
