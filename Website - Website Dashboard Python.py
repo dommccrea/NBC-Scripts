@@ -401,6 +401,13 @@ def main():
         # Ensure blank SAP counts are treated as 0 for comparison logic
         final_df['Stores Listed in SAP'] = final_df['Stores Listed in SAP'].fillna(0).astype(int)
 
+        # Exclude ALDI Services and Gift Card articles
+        exclude_mask = (
+            final_df['SAP Commodity Group'].str.contains('ALDI Services', case=False, na=False) |
+            final_df['SAP Commodity Group'].str.contains('Gift Cards', case=False, na=False)
+        )
+        final_df = final_df[~exclude_mask]
+
         mismatch_counts = final_df[
             (final_df['Stores Listed in SAP'] != final_df['Available in Stores (Count)']) &
             ~((final_df['Stores Listed in SAP'] == 0) & (final_df['Available in Stores (Count)'] == 0))
@@ -629,6 +636,10 @@ def main():
         for r in dataframe_to_rows(pivot_df, index=False, header=True):
             piv_ws.append(r)
         piv_ws.auto_filter.ref = piv_ws.dimensions
+        width_map = {'A':20, 'B':20, 'C':20, 'D':40}
+        for col, width in width_map.items():
+            piv_ws.column_dimensions[col].width = width
+        piv_ws['F1'] = 'This Table excludes all Special Buy Products'
 
         # Sheet of name mismatches
         if not mismatch_df.empty:
