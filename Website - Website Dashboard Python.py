@@ -401,10 +401,12 @@ def main():
         # Ensure blank SAP counts are treated as 0 for comparison logic
         final_df['Stores Listed in SAP'] = final_df['Stores Listed in SAP'].fillna(0).astype(int)
 
-        # Exclude ALDI Services and Gift Card articles
+        # Exclude ALDI Services and gift card related articles
         exclude_mask = (
             final_df['SAP Commodity Group'].str.contains('ALDI Services', case=False, na=False) |
-            final_df['SAP Commodity Group'].str.contains('Gift Cards', case=False, na=False)
+            final_df['SAP Commodity Group'].str.contains('Gift Cards', case=False, na=False) |
+            final_df['SAP Commodity Group'].str.contains('Giftcards', case=False, na=False) |
+            final_df['SAP Commodity Group'].str.contains('Giftcards, Vouchers, Tickets & Coupons', case=False, na=False)
         )
         final_df = final_df[~exclude_mask]
 
@@ -489,6 +491,15 @@ def main():
                     extra[col] = 'Not Active in Website Database'
             extra = extra[final_df.columns]
             final_df = pd.concat([final_df, extra], ignore_index=True)
+
+        # Reapply exclusions in case new rows were added
+        exclude_mask = (
+            final_df['SAP Commodity Group'].str.contains('ALDI Services', case=False, na=False) |
+            final_df['SAP Commodity Group'].str.contains('Gift Cards', case=False, na=False) |
+            final_df['SAP Commodity Group'].str.contains('Giftcards', case=False, na=False) |
+            final_df['SAP Commodity Group'].str.contains('Giftcards, Vouchers, Tickets & Coupons', case=False, na=False)
+        )
+        final_df = final_df[~exclude_mask]
 
         # Append helper column for formatting.
         # Explicitly define the desired output order so that
