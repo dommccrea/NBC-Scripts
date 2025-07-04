@@ -196,6 +196,18 @@ def _compute_errors(row):
         issues.append('Zero Net Content')
     if _is_blank(row.get('Brand')):
         issues.append('No Brand')
+    try:
+        online_cnt = int(row.get('Available in Stores (Count)', 0))
+    except Exception:
+        online_cnt = 0
+    try:
+        sap_cnt = int(row.get('Stores Listed in SAP', 0))
+    except Exception:
+        sap_cnt = 0
+    if online_cnt > 0 and sap_cnt == 0:
+        issues.append('Online Only - Missing in SAP')
+    if sap_cnt > 0 and online_cnt == 0:
+        issues.append('SAP Only - Missing Online')
     return '; '.join(issues)
 
 
@@ -680,13 +692,18 @@ def main():
         )]
 
         # Determine error conditions for each row
+
         final_df['Errors'] = final_df.apply(_compute_errors, axis=1)
 
-        # Placeholder columns used for hyperlinking to the website and
-        # Buying Smart Search. The actual hyperlinks are applied later
-        # using openpyxl after the workbook is created.
-        final_df['ALDI Website'] = 'Link'
-        final_df['Smart Search'] = 'Link'
+        # Text for quick access links uses the actual product names so the
+        # hyperlink text is informative within Excel. The hyperlinks
+        # themselves are applied later using ``openpyxl``.
+        final_df['ALDI Website'] = (
+            '(Web) ' + final_df['Website Product Name'].fillna('').astype(str)
+        )
+        final_df['Smart Search'] = (
+            '(SAP) ' + final_df['SAP Product Name'].fillna('').astype(str)
+        )
 
         # Append helper column for formatting.
         # Explicitly define the desired output order so that
