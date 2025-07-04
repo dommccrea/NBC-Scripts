@@ -8,6 +8,7 @@ from openpyxl.styles.differential import DifferentialStyle
 from openpyxl.formatting.rule import Rule
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.dataframe import dataframe_to_rows
+import re
 # Table functionality was removed as it caused Excel recovery errors
 from datetime import datetime
 from rapidfuzz import fuzz
@@ -156,6 +157,46 @@ def compute_product_location(offers_df, region_map):
 
     grouped['Regions'] = grouped['Regions'].apply(flag_all)
     return grouped
+
+
+def _is_blank(value):
+    """Return True if the given value is empty or the string 'nan'."""
+    if pd.isna(value):
+        return True
+    return str(value).strip() == '' or str(value).strip().lower() == 'nan'
+
+
+def _zero_net_content(net, commodity_group):
+    """Return True if net content is zero and not an alcohol commodity group."""
+    if pd.isna(net):
+        zero = True
+    else:
+        s = str(net).strip()
+        zero = s == ''
+        if not zero:
+            try:
+                first = s.split()[0]
+                zero = float(first) == 0
+            except Exception:
+                zero = False
+    if not zero:
+        return False
+    if pd.isna(commodity_group):
+        return True
+    return not bool(re.search(r"Beer|Wine|Spirits|Liqueur", str(commodity_group), flags=re.IGNORECASE))
+
+
+def _compute_errors(row):
+    issues = []
+    if _is_blank(row.get('Product Description')):
+        issues.append('Missing Description')
+    if row.get('Image Status') == 'No Image Online':
+        issues.append('No Image')
+    if _zero_net_content(row.get('Net Content'), row.get('SAP Commodity Group')):
+        issues.append('Zero Net Content')
+    if _is_blank(row.get('Brand')):
+        issues.append('No Brand')
+    return '; '.join(issues)
 
 
 def compute_intra_region_price_variation(pricing_df, store_df, valid_stores):
@@ -632,6 +673,15 @@ def main():
             )
             price_variation_df = price_variation_df[~exclude_mask_pv]
 
+        # Remove rows where the product is not available online or in SAP
+        final_df = final_df[~(
+            (final_df['Available in Stores (Count)'] == 0) &
+            (final_df['Stores Listed in SAP'] == 0)
+        )]
+
+        # Determine error conditions for each row
+        final_df['Errors'] = final_df.apply(_compute_errors, axis=1)
+
         # Append helper column for formatting.
         # Explicitly define the desired output order so that
         # "Stores Listed in SAP" occupies column **G** in the workbook.
@@ -652,8 +702,9 @@ def main():
             'SAP Sub Commodity Group',     # N
             'Brand',                       # O
             'Net Content',                 # P
-            'Multiple Prices',             # Q
-            'Deviation'                    # R (hidden)
+            'Errors',                      # Q
+            'Multiple Prices',             # R
+            'Deviation'                    # S (hidden)
         ]
         final_df = final_df[column_order]
 
@@ -685,8 +736,9 @@ def main():
             'N': 29,  # SAP Sub Commodity Group
             'O': 25,  # Brand
             'P': 20,  # Net Content
-            'Q': 15,
+            'Q': 30,  # Errors
             'R': 15,
+            'S': 15,
         }
         for col, width in width_map.items():
             ws.column_dimensions[col].width = width
@@ -694,6 +746,9 @@ def main():
             cell.alignment = Alignment(wrap_text=True, vertical='top', horizontal='left')
         for cell in ws['J']:
             cell.alignment = Alignment(wrap_text=True, vertical='top', horizontal='left')
+
+        for row_idx in range(1, ws.max_row + 1):
+            ws.row_dimensions[row_idx].height = 20
 
         # Grey out rows with no stores
         grey_fill = PatternFill(start_color='CCCCCC', end_color='CCCCCC', fill_type='solid')
@@ -737,11 +792,11 @@ def main():
         ws.conditional_formatting.add(f"{brand_col}2:{brand_col}{ws.max_row}", rule)
         rule = Rule(type='expression', dxf=DifferentialStyle(fill=red_fill))
         formula = (
-            f"AND(LEN(${net_col}2)=0,"
+            f"AND(OR(LEN(TRIM(${net_col}2))=0,LEFT(TRIM(${net_col}2),1)=\"0\"),"
             f"NOT(ISNUMBER(SEARCH(\"Beer\",${cg_col}2))),"
             f"NOT(ISNUMBER(SEARCH(\"Wine\",${cg_col}2))),"
             f"NOT(ISNUMBER(SEARCH(\"Spirits\",${cg_col}2))),"
-            f"NOT(ISNUMBER(SEARCH(\"Liqueurs\",${cg_col}2))))"
+            f"NOT(ISNUMBER(SEARCH(\"Liqueur\",${cg_col}2))))"
         )
         rule.formula = [formula]
         ws.conditional_formatting.add(f"{net_col}2:{net_col}{ws.max_row}", rule)
@@ -783,19 +838,34 @@ def main():
             .apply(lambda g: pd.Series({
                 'Product_Count': g['Sellable ID'].nunique(),
                 'No_Image_Count': (g['Image Status'] == 'No Image Online').sum(),
+                'Missing_Description_Count': g['Product Description'].apply(_is_blank).sum(),
+                'Zero_Net_Content_Count': g.apply(lambda r: _zero_net_content(r['Net Content'], r['SAP Commodity Group']), axis=1).sum(),
                 'Not in Stores Online, but listed to stores': not_online_count(g)
             }))
             .reset_index()
         )
+        pivot_df = pivot_df.rename(columns={
+            'Product_Count': 'Product Count',
+            'No_Image_Count': 'No Image Count',
+            'Missing_Description_Count': 'Missing Description Count',
+            'Zero_Net_Content_Count': 'Zero Net Content Count'
+        })
 
         piv_ws = wb.create_sheet('BD Pivot')
         for r in dataframe_to_rows(pivot_df, index=False, header=True):
             piv_ws.append(r)
         piv_ws.auto_filter.ref = piv_ws.dimensions
-        width_map = {'A':20, 'B':20, 'C':20, 'D':40}
+        width_map = {
+            'A': 20,
+            'B': 20,
+            'C': 20,
+            'D': 20,
+            'E': 20,
+            'F': 40,
+        }
         for col, width in width_map.items():
             piv_ws.column_dimensions[col].width = width
-        piv_ws['F1'] = 'This Table excludes all Special Buy Products'
+        piv_ws['G1'] = 'This Table excludes all Special Buy Products'
 
         # Sheet of name mismatches
         if not mismatch_df.empty:
