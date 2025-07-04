@@ -132,12 +132,21 @@ def compute_product_location(offers_df, region_map):
     return grouped
 
 
-def compute_intra_region_price_variation(pricing_df, store_df):
-    """Identify price differences within each region for a product."""
-    df = pricing_df.merge(
-        store_df[['StoreID', 'StoreName', 'Region']],
-        on='StoreID',
-        how='left'
+def compute_intra_region_price_variation(pricing_df, store_df, valid_stores):
+    """Identify price differences within each region for a product.
+
+    Only stores present in ``valid_stores`` are considered. The output samples
+    include the store name together with the store id and region similar to the
+    listing discrepancy sheet.
+    """
+
+    df = (
+        pricing_df[pricing_df['StoreID'].astype(str).isin(valid_stores)]
+        .merge(
+            store_df[['StoreID', 'StoreName', 'Region']],
+            on='StoreID',
+            how='left'
+        )
     )
     df['Retail'] = df['RetailCents'] / 100.0
     df = df.dropna(subset=['Region'])
@@ -147,8 +156,11 @@ def compute_intra_region_price_variation(pricing_df, store_df):
         if grp['Retail'].nunique() > 1:
             samples = []
             for price, sub in grp.groupby('Retail'):
-                names = ', '.join(sub['StoreName'].astype(str).head(2))
-                samples.append(f"{price:.2f}: {names}")
+                info = [
+                    f"{row.StoreName} ({row.StoreID}, {row.Region})"
+                    for row in sub[['StoreName', 'StoreID', 'Region']].itertuples(index=False)
+                ]
+                samples.append(f"{price:.2f}: {', '.join(info[:2])}")
             records.append({
                 'Sellable ID': sid,
                 'Region': region,
@@ -408,15 +420,19 @@ def main():
         catalog = load_product_catalog()
         gp_info = load_general_product_info(conn)
         images_df = load_product_images()
+        sap_counts = load_sap_store_counts()
+        valid_stores = set(offers_base['StoreID'].astype(str))
+        if not sap_counts.empty and 'StoreList' in sap_counts.columns:
+            for lst in sap_counts['StoreList']:
+                valid_stores.update(str(s) for s in lst)
         final_df = build_dashboard(catalog, location_data, gp_info, pricing_data, images_df)
-        price_variation_df = compute_intra_region_price_variation(pricing_base, store_data)
+        price_variation_df = compute_intra_region_price_variation(pricing_base, store_data, valid_stores)
         if not price_variation_df.empty:
-            info_cols = ['Sellable ID', 'Website Product Name', 'SAP BD', 'SAP Commodity Group']
+            info_cols = ['Sellable ID', 'Website Product Name', 'SAP BD', 'SAP Commodity Group', 'Retail by Region (updated weekly)']
             merge_info = final_df[info_cols].drop_duplicates()
             price_variation_df = price_variation_df.merge(merge_info, on='Sellable ID', how='left')
-            price_variation_df = price_variation_df[['SAP BD', 'Sellable ID', 'Website Product Name', 'Region', 'Store Price Sample', 'SAP Commodity Group']]
+            price_variation_df = price_variation_df[['SAP BD', 'Sellable ID', 'Website Product Name', 'Region', 'Retail by Region (updated weekly)', 'Store Price Sample', 'SAP Commodity Group']]
 
-        sap_counts = load_sap_store_counts()
         sap_store_map = dict(zip(sap_counts['SellableID'], sap_counts['StoreList']))
         final_df = final_df.merge(
             sap_counts,
