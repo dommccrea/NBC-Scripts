@@ -682,6 +682,12 @@ def main():
         # Determine error conditions for each row
         final_df['Errors'] = final_df.apply(_compute_errors, axis=1)
 
+        # Placeholder columns used for hyperlinking to the website and
+        # Buying Smart Search. The actual hyperlinks are applied later
+        # using openpyxl after the workbook is created.
+        final_df['ALDI Website'] = 'Link'
+        final_df['Smart Search'] = 'Link'
+
         # Append helper column for formatting.
         # Explicitly define the desired output order so that
         # "Stores Listed in SAP" occupies column **G** in the workbook.
@@ -703,8 +709,10 @@ def main():
             'Brand',                       # O
             'Net Content',                 # P
             'Errors',                      # Q
-            'Multiple Prices',             # R
-            'Deviation'                    # S (hidden)
+            'ALDI Website',                # R (hyperlink)
+            'Smart Search',                # S (hyperlink)
+            'Multiple Prices',             # T
+            'Deviation'                    # U (hidden)
         ]
         final_df = final_df[column_order]
 
@@ -737,8 +745,10 @@ def main():
             'O': 25,  # Brand
             'P': 20,  # Net Content
             'Q': 30,  # Errors
-            'R': 15,
-            'S': 15,
+            'R': 14,  # ALDI Website
+            'S': 14,  # Smart Search
+            'T': 15,  # Multiple Prices
+            'U': 15,  # Deviation
         }
         for col, width in width_map.items():
             ws.column_dimensions[col].width = width
@@ -801,22 +811,26 @@ def main():
         rule.formula = [formula]
         ws.conditional_formatting.add(f"{net_col}2:{net_col}{ws.max_row}", rule)
 
-        # Hyperlinks for product and SAP names
+        # Hyperlinks for product names and new quick access links
         web_idx = [c.value for c in ws[1]].index('Website Product Name') + 1
         sap_idx = [c.value for c in ws[1]].index('SAP Product Name') + 1
+        site_idx = [c.value for c in ws[1]].index('ALDI Website') + 1
+        search_idx = [c.value for c in ws[1]].index('Smart Search') + 1
         sid_idx = [c.value for c in ws[1]].index('Sellable ID') + 1
         for row in range(2, ws.max_row + 1):
             sid_val = ws.cell(row=row, column=sid_idx).value
             web_link = build_website_link(sid_val)
             if web_link:
-                cell = ws.cell(row=row, column=web_idx)
-                cell.hyperlink = web_link
-                cell.font = Font(color='0000FF', underline='single')
+                for idx in (web_idx, site_idx):
+                    cell = ws.cell(row=row, column=idx)
+                    cell.hyperlink = web_link
+                    cell.font = Font(color='0000FF', underline='single')
             bss = build_bss_link(sid_val)
             if bss:
-                cell = ws.cell(row=row, column=sap_idx)
-                cell.hyperlink = bss
-                cell.font = Font(color='0000FF', underline='single')
+                for idx in (sap_idx, search_idx):
+                    cell = ws.cell(row=row, column=idx)
+                    cell.hyperlink = bss
+                    cell.font = Font(color='0000FF', underline='single')
 
         # Hide helper columns
         ws.column_dimensions[dev_col].hidden = True
