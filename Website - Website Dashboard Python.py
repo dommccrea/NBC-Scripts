@@ -53,6 +53,14 @@ def build_bss_link(sellable_id):
     return BSS_LINK_TEMPLATE.format(id=first_six)
 
 
+def build_website_link(sellable_id):
+    """Return website product link for the given sellable ID."""
+    try:
+        return f"https://www.aldi.com.au/product/{int(sellable_id):018d}"
+    except (ValueError, TypeError):
+        return None
+
+
 def check_file(path, description):
     """Print whether the given file path exists."""
     if os.path.exists(path):
@@ -313,9 +321,6 @@ def build_dashboard(df_catalog, df_location, df_gp, df_price, df_images):
     df['Available Online by Region'] = df['Available Online by Region'].fillna('Not Online')
     df['Available in Stores (Count)'] = df['Available in Stores (Count)'].fillna(0).astype(int)
 
-    df['Product Link'] = df['Sellable ID'].apply(
-        lambda x: f"https://www.aldi.com.au/product/{int(x):018d}" if pd.notnull(x) else None
-    )
 
     df = df.merge(
         df_gp,
@@ -386,7 +391,6 @@ def build_dashboard(df_catalog, df_location, df_gp, df_price, df_images):
             'SAP Sub Commodity Group': first_row.get('SAP Sub Commodity Group'),
             'Legal Disclaimer': first_row.get('Legal Disclaimer'),
             'Image Status': first_row.get('ImageStatus', 'No Image Online'),
-            'Product Link': first_row['Product Link'],
             'Available in Stores (Count)': first_row['Available in Stores (Count)'],
             'Regions On Website': region_label,
             'Retail by Region': retail_by_region,
@@ -405,7 +409,7 @@ def build_dashboard(df_catalog, df_location, df_gp, df_price, df_images):
         'Retail by Region (updated weekly)', 'Product Description',
         'Legal Disclaimer', 'Image Status', 'Hierarchy',
         'SAP Commodity Group', 'SAP Sub Commodity Group',
-        'Brand', 'Net Content', 'Product Link', 'Multiple Prices'
+        'Brand', 'Net Content', 'Multiple Prices'
     ]]
     out['Image Status'] = out['Image Status'].fillna('No Image Online')
     return out
@@ -519,11 +523,15 @@ def main():
             )
             price_variation_df = price_variation_df[~exclude_mask_pv]
 
+        # Sort data for output
+        final_df = final_df.sort_values('SAP BD')
+        price_variation_df = price_variation_df.sort_values('Hierarchy')
+
         mismatch_counts = final_df[
             (final_df['Stores Listed in SAP'] != final_df['Available in Stores (Count)']) &
             ~((final_df['Stores Listed in SAP'] == 0) & (final_df['Available in Stores (Count)'] == 0))
         ][[
-            'SAP BD', 'Sellable ID', 'Website Product Name', 'Product Link',
+            'SAP BD', 'Sellable ID', 'Website Product Name',
             'Available in Stores (Count)', 'Stores Listed in SAP', 'SAP Store List'
         ]]
 
@@ -551,8 +559,8 @@ def main():
             lambda sid: diff_info(set(sap_store_map.get(sid, [])), set(website_store_map.get(sid, [])))
         )
         mismatch_counts[['Stores Listed without Product Available Online (up to 5)', 'Regions with SAP Only']] = pd.DataFrame(cols.tolist(), index=mismatch_counts.index)
-        # Keep Product Link so we can add hyperlinks later
         mismatch_counts = mismatch_counts.drop(columns=['SAP Store List'])
+        mismatch_counts = mismatch_counts.sort_values('Stores Listed in SAP')
         final_df = final_df.drop(columns=['SAP Store Sample', 'SAP Store List'])
 
         # Determine most common store count per region combination
@@ -644,9 +652,8 @@ def main():
             'SAP Sub Commodity Group',     # N
             'Brand',                       # O
             'Net Content',                 # P
-            'Product Link',                # Q
-            'Multiple Prices',             # R
-            'Deviation'                    # S (hidden)
+            'Multiple Prices',             # Q
+            'Deviation'                    # R (hidden)
         ]
         final_df = final_df[column_order]
 
@@ -680,7 +687,6 @@ def main():
             'P': 15,
             'Q': 15,
             'R': 15,
-            'S': 15,
         }
         for col, width in width_map.items():
             ws.column_dimensions[col].width = width
@@ -730,28 +736,17 @@ def main():
         rule.formula = [f"LEN(${net_col}2)=0"]
         ws.conditional_formatting.add(f"{net_col}2:{net_col}{ws.max_row}", rule)
 
-        # Hyperlinks
-        link_col = get_column_letter([c.value for c in ws[1]].index('Product Link') + 1)
-        col_num = [c.value for c in ws[1]].index('Product Link') + 1
-        for row in ws.iter_rows(min_row=2, max_row=ws.max_row,
-                                min_col=col_num, max_col=col_num):
-            for cell in row:
-                if cell.value:
-                    cell.hyperlink = cell.value
-                    cell.value = 'View Online'
-                    cell.font = Font(color='0000FF', underline='single')
-
-        # Also hyperlink the product and SAP names for easier navigation
+        # Hyperlinks for product and SAP names
         web_idx = [c.value for c in ws[1]].index('Website Product Name') + 1
         sap_idx = [c.value for c in ws[1]].index('SAP Product Name') + 1
         sid_idx = [c.value for c in ws[1]].index('Sellable ID') + 1
         for row in range(2, ws.max_row + 1):
-            web_link = ws.cell(row=row, column=col_num).value
+            sid_val = ws.cell(row=row, column=sid_idx).value
+            web_link = build_website_link(sid_val)
             if web_link:
                 cell = ws.cell(row=row, column=web_idx)
                 cell.hyperlink = web_link
                 cell.font = Font(color='0000FF', underline='single')
-            sid_val = ws.cell(row=row, column=sid_idx).value
             bss = build_bss_link(sid_val)
             if bss:
                 cell = ws.cell(row=row, column=sap_idx)
@@ -823,8 +818,12 @@ def main():
 
         if not mismatch_counts.empty:
             samp_ws = wb.create_sheet('Listing Discrepancy')
-            display_df = mismatch_counts.drop(columns=['Product Link'])
-            display_df = display_df.rename(columns={'Sellable ID': 'Sellable ID (Smart Search link)'})
+            display_df = mismatch_counts.copy()
+            display_df = display_df.rename(columns={
+                'Sellable ID': 'Sellable ID (Smart Search link)',
+                'Available in Stores (Count)': 'Stores on Website'
+            })
+            display_df = display_df.sort_values('Stores Listed in SAP')
             cols = list(display_df.columns)
 
             # Ensure "Regions with SAP Only" appears after "Regions with Website Only"
@@ -874,10 +873,11 @@ def main():
 
             name_idx = list(display_df.columns).index('Website Product Name') + 1
             sid_idx = list(display_df.columns).index('Sellable ID (Smart Search link)') + 1
-            for row_idx, (link, sid) in enumerate(zip(mismatch_counts['Product Link'], mismatch_counts['Sellable ID']), start=2):
-                if link:
+            for row_idx, sid in enumerate(mismatch_counts['Sellable ID'], start=2):
+                web_link = build_website_link(sid)
+                if web_link:
                     cell = samp_ws.cell(row=row_idx, column=name_idx)
-                    cell.hyperlink = link
+                    cell.hyperlink = web_link
                     cell.font = Font(color='0000FF', underline='single')
                 bss = build_bss_link(sid)
                 if bss:
@@ -888,7 +888,7 @@ def main():
             yellow_fill_ld = PatternFill(start_color='FFFACD', end_color='FFFACD', fill_type='solid')
             orange_fill_ld = PatternFill(start_color='FFE4B5', end_color='FFE4B5', fill_type='solid')
 
-            yellow_cols = ['Available in Stores (Count)',
+            yellow_cols = ['Stores on Website',
                            'Stores on Website Without Listing (up to 5)',
                            'Regions with Website Only']
             orange_cols = ['Stores Listed in SAP',
@@ -913,11 +913,21 @@ def main():
             pv_ws = wb.create_sheet('Store Price Check')
             display_df = price_variation_df.drop(columns=['SAP Commodity Group'])
             display_df = display_df.rename(columns={'Sellable ID': 'Sellable ID (Smart Search link)'})
+            display_df = display_df.sort_values('Hierarchy')
             for r in dataframe_to_rows(display_df, index=False, header=True):
                 pv_ws.append(r)
             pv_ws.auto_filter.ref = pv_ws.dimensions
-            for col in range(1, pv_ws.max_column + 1):
-                pv_ws.column_dimensions[get_column_letter(col)].width = 20
+            width_map = {
+                'A': 20,
+                'B': 25,
+                'C': 30,
+                'D': 28,
+                'E': 9,
+                'F': 42,
+                'G': 100,
+            }
+            for col_letter, width in width_map.items():
+                pv_ws.column_dimensions[col_letter].width = width
             sample_col = get_column_letter(list(display_df.columns).index('Store Price Sample') + 1)
             red_fill = PatternFill(start_color='FFCCCC', end_color='FFCCCC', fill_type='solid')
             rule = Rule(type='expression', dxf=DifferentialStyle(fill=red_fill))
@@ -928,7 +938,7 @@ def main():
             web_idx = list(display_df.columns).index('Website Product Name') + 1
             sid_idx = list(display_df.columns).index('Sellable ID (Smart Search link)') + 1
             for row_idx, sid in enumerate(price_variation_df['Sellable ID'], start=2):
-                web_link = f"https://www.aldi.com.au/product/{int(sid):018d}" if pd.notnull(sid) else None
+                web_link = build_website_link(sid)
                 if web_link:
                     cell = pv_ws.cell(row=row_idx, column=web_idx)
                     cell.hyperlink = web_link
