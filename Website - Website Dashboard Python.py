@@ -762,8 +762,8 @@ def main():
             'O': 25,  # Brand
             'P': 20,  # Net Content
             'Q': 30,  # Errors
-            'R': 14,  # ALDI Website
-            'S': 14,  # Smart Search
+            'R': 35,  # ALDI Website
+            'S': 35,  # Smart Search
             'T': 15,  # Multiple Prices
             'U': 15,  # Deviation
         }
@@ -852,6 +852,40 @@ def main():
         # Hide helper columns
         ws.column_dimensions[dev_col].hidden = True
         ws.column_dimensions[multi_col].hidden = True
+
+        # Create Error Summary sheet with rows that contain errors
+        error_df = final_df[final_df['Errors'].notna() &
+                           (final_df['Errors'].str.strip() != '')][[
+                               'SAP BD', 'Sellable ID', 'Errors',
+                               'ALDI Website', 'Smart Search']]
+        if not error_df.empty:
+            err_ws = wb.create_sheet('Error Summary')
+            for r in dataframe_to_rows(error_df, index=False, header=True):
+                err_ws.append(r)
+            err_ws.auto_filter.ref = err_ws.dimensions
+            err_widths = {
+                'A': width_map['A'],
+                'B': width_map['B'],
+                'C': width_map['Q'],
+                'D': width_map['R'],
+                'E': width_map['S'],
+            }
+            for col, width in err_widths.items():
+                err_ws.column_dimensions[col].width = width
+
+            web_idx = list(error_df.columns).index('ALDI Website') + 1
+            search_idx = list(error_df.columns).index('Smart Search') + 1
+            for row_idx, sid in enumerate(error_df['Sellable ID'], start=2):
+                web_link = build_website_link(sid)
+                if web_link:
+                    cell = err_ws.cell(row=row_idx, column=web_idx)
+                    cell.hyperlink = web_link
+                    cell.font = Font(color='0000FF', underline='single')
+                bss = build_bss_link(sid)
+                if bss:
+                    cell = err_ws.cell(row=row_idx, column=search_idx)
+                    cell.hyperlink = bss
+                    cell.font = Font(color='0000FF', underline='single')
 
         # Create pivot summary sheet
         def not_online_count(group):
