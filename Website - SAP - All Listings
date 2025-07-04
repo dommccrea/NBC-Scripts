@@ -17,12 +17,15 @@ WHERE DATAB < ADD_DAYS(CURRENT_DATE, 7)
   ),
 
   -- 3) Store assignments valid today, no GD* stores
+  --    also exclude stores flagged as group '02' in WRF1
   ValidStores AS (
-    SELECT ASORT
-         , LOCNR
+    SELECT WRSZ.ASORT
+         , WRSZ.LOCNR
       FROM WRSZ
-     WHERE CURRENT_DATE BETWEEN DATAB AND DATBI
-       AND LOCNR NOT LIKE 'GD%'
+      JOIN WRF1 ON WRF1.LOCNR = WRSZ.LOCNR
+     WHERE CURRENT_DATE BETWEEN WRSZ.DATAB AND WRSZ.DATBI
+       AND WRSZ.LOCNR NOT LIKE 'GD%'
+       AND WRF1.SPGR1 <> '02'
   ),
 
   -- 4) Join everything but remove duplicates
