@@ -613,8 +613,10 @@ def main():
             not_active = group['Available in Stores (Count)'] == 'Not Active in Website Database'
             return group.loc[mask | not_active, 'Sellable ID'].nunique()
 
+        # Exclude Special Buy articles from the BD summary pivot
+        pivot_source = final_df[~final_df['Hierarchy'].str.contains('Special Buy', case=False, na=False)]
         pivot_df = (
-            final_df.groupby('SAP BD')
+            pivot_source.groupby('SAP BD')
             .apply(lambda g: pd.Series({
                 'Product_Count': g['Sellable ID'].nunique(),
                 'No_Image_Count': (g['Image Status'] == 'No Image Online').sum(),
